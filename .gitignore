@@ -1,0 +1,12 @@
+# Chua mat khau -- tuyet doi khong commit
+config.ini
+users.csv
+*.pass
+
+# Ket qua chay
+logs/
+state/
+LOG_imapsync/
+
+__pycache__/
+*.py[cod]

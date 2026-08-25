@@ -1,0 +1,289 @@
+# -*- coding: utf-8 -*-
+"""Test tich hop: chay het luong doctor -> sync -> report voi imapsync gia.
+
+Khong ket noi mang. Buoc do folder Gmail duoc thay bang du lieu mau.
+"""
+
+import io
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest import mock
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+sys.path.insert(0, str(HERE))
+
+from migrate_mail import cli
+from migrate_mail.report import load_run
+
+from test_discover import GMAIL_EN, parse
+
+FAKE = HERE / "fake_imapsync.py"
+
+CONFIG = """[source]
+host = imap.gmail.com
+port = 993
+ssl = true
+
+[dest]
+host = mail.congty.vn
+port = 993
+ssl = true
+
+[sync]
+workers = 2
+maxsize = 52428800
+
+[paths]
+imapsync = {imapsync}
+logdir = logs
+statedir = state
+"""
+
+USERS = """src_user,src_password,dst_user,dst_password
+an@cu.com,aaaa bbbb cccc dddd,an@moi.vn,MatKhau1
+# dong ghi chu se bi bo qua
+binh@cu.com,eeeeffffgggghhhh,binh@moi.vn,MatKhau2
+
+fail.chi@cu.com,iiiijjjjkkkkllll,chi@moi.vn,MatKhau3
+"""
+
+
+def quote(p):
+    return '"%s"' % p if " " in str(p) else str(p)
+
+
+class CliTestCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
+        (self.tmp / "config.ini").write_text(
+            CONFIG.format(imapsync=imapsync), encoding="utf-8")
+        (self.tmp / "users.csv").write_text(USERS, encoding="utf-8")
+        self.argv_log = self.tmp / "argv.jsonl"
+        os.environ["FAKE_IMAPSYNC_ARGV"] = str(self.argv_log)
+        self.addCleanup(os.environ.pop, "FAKE_IMAPSYNC_ARGV", None)
+
+    def run_cli(self, *args):
+        base = ["--config", str(self.tmp / "config.ini"),
+                "--users", str(self.tmp / "users.csv")]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = cli.main(base + list(args))
+        return code, buf.getvalue()
+
+    def recorded_argv(self):
+        if not self.argv_log.exists():
+            return []
+        return [json.loads(l) for l in self.argv_log.read_text(encoding="utf-8").splitlines()]
+
+
+class TestDoctor(CliTestCase):
+    def test_reports_ready_when_everything_present(self):
+        code, out = self.run_cli("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("imapsync fake 9.9.9", out)
+        self.assertIn("3 mailbox", out)
+        self.assertIn("san sang", out)
+
+    def test_flags_are_checked_against_installed_imapsync(self):
+        _code, out = self.run_cli("doctor")
+        self.assertIn("moi flag tool dung deu co trong", out)
+
+    def test_missing_imapsync_is_an_error(self):
+        (self.tmp / "config.ini").write_text(
+            CONFIG.format(imapsync="imapsync-khong-ton-tai"), encoding="utf-8")
+        code, out = self.run_cli("doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("khong tim thay imapsync", out)
+
+
+def fake_folders(cfg, user, timeout=60):
+    if "loi" in user.src_user:
+        from migrate_mail.discover import DiscoveryError
+        raise DiscoveryError("login that bai: Invalid credentials")
+    return parse(GMAIL_EN)
+
+
+class TestSync(CliTestCase):
+    def sync(self, *args):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            return self.run_cli("sync", *args)
+
+    def test_full_run_reports_per_mailbox_outcome(self):
+        code, out = self.sync()
+        self.assertEqual(code, 1, out)          # co 1 mailbox that bai co y
+        self.assertIn("an@cu.com", out)
+        self.assertIn("2/3 mailbox OK", out)
+        self.assertIn("EXIT_AUTHENTICATION_FAILURE", out)
+
+    def test_writes_csv_html_and_json_reports(self):
+        _code, out = self.sync()
+        logs = self.tmp / "logs"
+        self.assertTrue(list(logs.glob("report-*.csv")), out)
+        self.assertTrue(list(logs.glob("report-*.html")))
+        runs = list((self.tmp / "state" / "runs").glob("*.json"))
+        self.assertEqual(len(runs), 1)
+        rows = load_run(runs[0])
+        self.assertEqual(len(rows), 3)
+        ok = [r for r in rows if r["ket_qua"] == "OK"]
+        self.assertEqual(len(ok), 2)
+        self.assertEqual(ok[0]["mail_chuyen"], "421")
+        self.assertEqual(ok[0]["dung_luong"], "10.0 MB")
+
+    def test_each_mailbox_gets_its_own_log_file(self):
+        self.sync()
+        logs = sorted(p.name for p in (self.tmp / "logs").glob("*.sync.*.log"))
+        self.assertEqual(len(logs), 3)
+        self.assertTrue(any(n.startswith("an@cu.com") for n in logs))
+
+    def test_log_records_command_without_exposing_passwords(self):
+        self.sync()
+        log = next((self.tmp / "logs").glob("an@cu.com.sync.*.log"))
+        text = log.read_text(encoding="utf-8")
+        self.assertIn("# lenh:", text)
+        self.assertIn("<passfile>", text)
+        self.assertNotIn("aaaabbbbccccdddd", text)
+        self.assertNotIn("MatKhau1", text)
+
+    def test_passfiles_are_deleted_after_run(self):
+        self.sync()
+        leftovers = list((self.tmp / "state").rglob("*.pass"))
+        self.assertEqual(leftovers, [])
+
+    def test_app_password_spaces_are_stripped_before_use(self):
+        """Google hien app password co khoang trang; IMAP nhan ban lien nhau."""
+        self.sync()
+        # imapsync gia da xac nhan passfile ton tai; kiem tra noi dung qua User
+        from migrate_mail.users import load_users
+        u = load_users(self.tmp / "users.csv")[0]
+        self.assertEqual(u.src_password, "aaaabbbbccccdddd")
+
+    def test_gmail_exclusions_reach_imapsync(self):
+        self.sync()
+        argv = self.recorded_argv()
+        self.assertTrue(argv)
+        flat = argv[0]
+        excludes = [flat[i + 1] for i, t in enumerate(flat) if t == "--exclude"]
+        self.assertEqual(len(excludes), 4)
+        self.assertTrue(any("All" in e for e in excludes))
+
+    def test_maxsize_from_config_reaches_imapsync(self):
+        self.sync()
+        flat = self.recorded_argv()[0]
+        self.assertIn("--maxsize", flat)
+        self.assertEqual(flat[flat.index("--maxsize") + 1], "52428800")
+
+    def test_dry_run_passes_dry_flag(self):
+        self.sync("--dry")
+        self.assertTrue(all("--dry" in a for a in self.recorded_argv()))
+
+    def test_since_days_becomes_maxage(self):
+        self.sync("--since-days", "3")
+        flat = self.recorded_argv()[0]
+        self.assertEqual(flat[flat.index("--maxage") + 1], "3")
+
+    def test_only_filters_to_one_mailbox(self):
+        code, out = self.sync("--only", "an@cu.com")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.recorded_argv()), 1)
+
+    def test_only_rejects_unknown_address(self):
+        code, out = self.sync("--only", "khongco@cu.com")
+        self.assertEqual(code, 2)
+        self.assertIn("khong ton tai", out)
+
+    def test_resume_skips_completed_mailboxes(self):
+        self.sync("--only", "an@cu.com")
+        self.argv_log.unlink()
+        code, out = self.sync("--only", "an@cu.com", "--resume")
+        self.assertEqual(code, 0, out)
+        self.assertIn("bo qua 1 mailbox", out)
+        self.assertEqual(self.recorded_argv(), [])
+
+    def test_mailbox_with_failed_discovery_is_not_synced(self):
+        """Chay mu se rat de keo ca All Mail sang -> fail closed, bo qua han."""
+        (self.tmp / "users.csv").write_text(
+            "src_user,src_password,dst_user,dst_password\n"
+            "loi@cu.com,aaaabbbbccccdddd,loi@moi.vn,MatKhau\n", encoding="utf-8")
+        code, out = self.sync()
+        self.assertEqual(code, 1)
+        self.assertIn("Khong mailbox nao do duoc folder", out)
+        self.assertEqual(self.recorded_argv(), [])
+
+    def test_partial_discovery_failure_still_syncs_the_rest(self):
+        (self.tmp / "users.csv").write_text(
+            "src_user,src_password,dst_user,dst_password\n"
+            "loi@cu.com,aaaabbbbccccdddd,loi@moi.vn,MatKhau\n"
+            "an@cu.com,aaaabbbbccccdddd,an@moi.vn,MatKhau\n", encoding="utf-8")
+        code, out = self.sync()
+        self.assertEqual(code, 1)                      # tong the van la that bai
+        self.assertIn("khong do duoc folder", out)     # ly do cua mailbox hong
+        self.assertEqual(len(self.recorded_argv()), 1) # nhung mailbox kia van chay
+        self.assertIn("1/2 mailbox OK", out)
+
+
+class TestReport(CliTestCase):
+    def test_report_replays_last_run(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync")
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertIn("2/3 mailbox OK", out)
+
+    def test_report_list_shows_saved_runs(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync")
+        code, out = self.run_cli("report", "--list")
+        self.assertEqual(code, 0)
+        self.assertIn(".json", out)
+
+    def test_report_without_any_run_is_graceful(self):
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 1)
+        self.assertIn("Chua co lan chay nao", out)
+
+    def test_report_can_export_html(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync")
+        out_path = self.tmp / "bao-cao.html"
+        code, _ = self.run_cli("report", "--out", str(out_path))
+        self.assertEqual(code, 0)
+        html = out_path.read_text(encoding="utf-8")
+        self.assertIn("<table>", html)
+        self.assertIn("an@moi.vn", html)
+        self.assertNotIn("MatKhau", html)
+
+
+class TestConfigErrors(CliTestCase):
+    def test_missing_config_is_reported_clearly(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = cli.main(["--config", str(self.tmp / "khongco.ini"), "doctor"])
+        self.assertEqual(code, 2)
+        self.assertIn("config.example.ini", buf.getvalue())
+
+    def test_users_csv_missing_column_is_reported(self):
+        (self.tmp / "users.csv").write_text("src_user,dst_user\na@b.c,d@e.f\n", encoding="utf-8")
+        code, out = self.run_cli("preflight")
+        self.assertEqual(code, 2)
+        self.assertIn("thieu cot", out)
+
+    def test_duplicate_source_user_is_rejected(self):
+        (self.tmp / "users.csv").write_text(
+            "src_user,src_password,dst_user,dst_password\n"
+            "a@b.c,pw,x@y.z,pw\na@b.c,pw,q@y.z,pw\n", encoding="utf-8")
+        code, out = self.run_cli("preflight")
+        self.assertEqual(code, 2)
+        self.assertIn("trung", out)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

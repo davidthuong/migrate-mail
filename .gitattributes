@@ -1,0 +1,10 @@
+# Tool nay chay tren VPS Linux. File co CRLF se lam shell script chet ngay
+# dong dau ("bad interpreter: /usr/bin/env bash^M"), nen ep LF bat ke ai
+# clone tren he dieu hanh nao.
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.ini  text eol=lf
+*.csv  text eol=lf
+*.md   text eol=lf
