@@ -41,9 +41,15 @@ chmod +x install.sh mm.py
 sudo ./install.sh
 ```
 
-`install.sh` cài các module Perl imapsync cần (apt trên Debian/Ubuntu, dnf trên
-RHEL/Alma, phần thiếu thì bù bằng `cpanm`), tải imapsync từ GitHub về
-`/usr/local/bin/imapsync`, rồi chạy thử `--version` để chắc chắn nó lên được.
+`install.sh` tải imapsync từ GitHub về `/usr/local/bin/imapsync`, rồi cài các
+module Perl nó cần (apt trên Debian/Ubuntu, dnf trên RHEL/Alma, phần thiếu bù
+bằng `cpanm`).
+
+Script **không giữ danh sách module cứng**. Nó đọc thẳng các dòng `use`/`require`
+trong file imapsync vừa tải, nên luôn khớp với đúng bản đang cài. Sau đó nó chạy
+`imapsync --version` trong một vòng lặp: mỗi lần Perl báo `Can't locate Foo/Bar.pm`
+thì cài đúng module đó rồi thử lại, tới khi imapsync chạy được. Danh sách viết tay
+sẽ luôn lệch theo thời gian; đọc từ nguồn thì không.
 
 Muốn ghim phiên bản imapsync cụ thể:
 
