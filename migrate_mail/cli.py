@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, report
+from . import __version__, report, verify
 from .config import Config, load_config
-from .discover import DiscoveryError, Plan, build_plan, check_login, list_folders
+from .discover import (DiscoveryError, Plan, build_plan, check_login,
+                       list_folders, open_connection)
 from .runner import (MODE_DRY, MODE_SYNC, Result, flags_used, imapsync_available,
                      imapsync_run, run_user, unsupported_flags, user_statedir)
 from .users import User, filter_users, load_users
@@ -289,6 +290,105 @@ def cmd_sync(args, cfg: Config) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# verify
+# --------------------------------------------------------------------------- #
+
+def _verify_one(cfg: Config, user: User, cap: int) -> verify.UserCheck:
+    check = verify.UserCheck(src_user=user.src_user, dst_user=user.dst_user)
+    src_conn = dst_conn = None
+    try:
+        folders = list_folders(cfg, user)
+        plan = build_plan(folders, cfg.sync)
+        src_conn = open_connection(cfg, user, "source")
+        dst_conn = open_connection(cfg, user, "dest")
+
+        pairs = [(f, dest) for f, dest in plan.mapped] + [(f, f.raw) for f in plan.kept]
+        for folder, dest_name in pairs:
+            fc = verify.FolderCheck(source_folder=folder.display, dest_folder=dest_name)
+            try:
+                src_index, fc.source_total = verify.fetch_index(src_conn, folder.raw, cap)
+                dst_index, fc.dest_total = verify.fetch_index(dst_conn, dest_name, cap)
+            except Exception as exc:
+                fc.error = str(exc)
+                check.folders.append(fc)
+                continue
+            fc.compared, fc.matched, fc.mismatched, fc.samples = verify.compare_indexes(
+                src_index, dst_index)
+            fc.missing_on_dest = max(0, len(src_index) - fc.compared)
+            check.folders.append(fc)
+    except DiscoveryError as exc:
+        check.error = str(exc)
+    except Exception as exc:                                # pragma: no cover
+        check.error = "%s: %s" % (type(exc).__name__, exc)
+    finally:
+        for conn in (src_conn, dst_conn):
+            if conn is not None:
+                try:
+                    conn.logout()
+                except Exception:
+                    pass
+    return check
+
+
+def _fmt_epoch(epoch: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(epoch))
+
+
+def cmd_verify(args, cfg: Config) -> int:
+    users = filter_users(load_users(args.users), args.only)
+    cap = args.sample
+    say("Doi chieu ngay thang cua mail giua hai dau.")
+    say("Lay mau toi da %d mail moi folder. Sai lech duoi %ds coi nhu khop.\n"
+        % (cap, verify.TOLERANCE_SECONDS))
+
+    checks: List[verify.UserCheck] = []
+    with futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(users)))) as pool:
+        for check in pool.map(lambda u: _verify_one(cfg, u, cap), users):
+            checks.append(check)
+            if check.error:
+                say("LOI  %-32s %s" % (check.src_user, check.error))
+                continue
+            flag = "OK  " if check.ok else "LECH"
+            say("%s %-32s doi chieu %d mail, lech %d, thieu ben dich %d"
+                % (flag, check.src_user, check.compared, check.mismatched, check.missing))
+            for fc in check.folders:
+                if fc.error:
+                    say("       %-28s loi: %s" % (fc.source_folder, fc.error))
+                elif fc.mismatched:
+                    say("       %-28s %d/%d lech ngay"
+                        % (fc.source_folder, fc.mismatched, fc.compared))
+                    for msgid, src_e, dst_e in fc.samples:
+                        say("         %s" % msgid[:60])
+                        say("           Gmail  : %s" % _fmt_epoch(src_e))
+                        say("           IceWarp: %s" % _fmt_epoch(dst_e))
+
+    total_cmp = sum(c.compared for c in checks)
+    total_bad = sum(c.mismatched for c in checks)
+    failed = [c for c in checks if not c.ok]
+
+    say("")
+    if total_cmp == 0:
+        say("Khong doi chieu duoc mail nao. Da chay sync chua? Folder ben dich co ton tai khong?")
+        return 1
+    say("Ket qua: %d mail doi chieu, %d lech ngay (%.2f%%)."
+        % (total_cmp, total_bad, 100.0 * total_bad / total_cmp))
+    if total_bad:
+        say("")
+        say("Ngay KHONG duoc giu nguyen. Kiem tra theo thu tu nay:")
+        say("  1. Xem log sync co dong 'Info: turned ON syncinternaldates' khong.")
+        say("  2. Neu co ma van lech, IceWarp dang bo qua ngay trong lenh APPEND.")
+        say("     Doi date_source = header trong config.ini roi sync lai mailbox do")
+        say("     bang: ./mm.py sync --only <dia chi>")
+        say("  3. Neu van lech, hoi nha cung cap IceWarp ve viec server ghi de")
+        say("     INTERNALDATE luc APPEND.")
+    elif failed:
+        say("Ngay khop het, nhung co folder khong doi chieu duoc (xem o tren).")
+    else:
+        say("Ngay thang duoc giu nguyen tren toan bo mau kiem tra.")
+    return 0 if not failed else 1
+
+
+# --------------------------------------------------------------------------- #
 # report
 # --------------------------------------------------------------------------- #
 
@@ -353,6 +453,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--resume", action="store_true",
                    help="bo qua mailbox da chay xong thanh cong truoc do")
     s.set_defaults(func=cmd_sync)
+
+    v = sub.add_parser("verify", help="doi chieu ngay thang cua mail giua hai dau")
+    v.add_argument("--only", default="")
+    v.add_argument("--sample", type=int, default=200,
+                   help="so mail lay mau moi folder (mac dinh 200, 0 = lay het)")
+    v.set_defaults(func=cmd_verify)
 
     r = sub.add_parser("report", help="xem lai bao cao cua lan chay truoc")
     r.add_argument("--list", action="store_true", help="liet ke cac lan chay da luu")

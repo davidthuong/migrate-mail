@@ -162,7 +162,17 @@ tmux new -s migrate
 python3 mm.py sync
 ```
 
-### 6. Cutover
+### 6. `verify` — kiểm chứng ngày tháng
+
+```bash
+python3 mm.py verify
+```
+
+Đọc `INTERNALDATE` thật ở cả hai đầu, ghép theo `Message-Id`, rồi so. Chạy sau
+khi sync xong mailbox đầu tiên — đừng đợi chuyển hết 20 hộp thư mới phát hiện
+ngày sai. Chi tiết ở mục dưới.
+
+### 7. Cutover
 
 Ngày đổi MX, chạy vòng delta để nhặt mail mới về sau lần sync đầu:
 
@@ -172,6 +182,70 @@ python3 mm.py sync --since-days 7
 
 Sau khi MX đã trỏ về IceWarp và đã ổn định, chạy thêm một lần nữa để nhặt nốt
 mail đến muộn ở Gmail.
+
+---
+
+## Ngày tháng của mail
+
+Triệu chứng hay gặp khi migrate: chuyển xong thì **mọi mail đều mang ngày của lúc
+chuyển**, hộp thư mất hết thứ tự thời gian.
+
+Nguyên nhân nằm ở chỗ IMAP có hai loại ngày:
+
+| | Là gì | Ai nhìn thấy |
+|---|---|---|
+| `INTERNALDATE` | Ngày server gán cho mail lúc nó được đưa vào hộp thư | **Cái mail client dùng để sắp xếp và hiển thị** |
+| Header `Date:` | Nằm trong thân mail, không bao giờ đổi | Chỉ hiện khi xem chi tiết |
+
+Nếu server đích không nhận `INTERNALDATE` từ nguồn, nó sẽ gán ngày hiện tại — và
+toàn bộ hộp thư nhảy về ngày migrate.
+
+**Tool đã xử lý sẵn.** Lệnh imapsync luôn kèm `--syncinternaldates` một cách tường
+minh (không dựa vào mặc định ngầm, để nhìn thấy được trong log). Có một cái bẫy
+tool tránh được: `--gmail2` của imapsync tự bật `--idatefromheader` — nhưng đó là
+cho chiều Gmail làm **đích**, vì Gmail bỏ qua ngày trong lệnh APPEND. Chiều
+Gmail → IceWarp không dính, và tool không dùng preset đó.
+
+### Kiểm chứng thay vì tin
+
+```bash
+python3 mm.py verify --only an.nguyen@congty-cu.com
+```
+
+Đọc `INTERNALDATE` thật ở cả hai đầu, ghép theo `Message-Id`, so từng cái. Múi
+giờ khác nhau không bị báo lệch giả — `+0700 09:00` và `+0000 02:00` được hiểu
+là cùng một thời điểm.
+
+```
+OK   an.nguyen@congty-cu.com   doi chieu 1843 mail, lech 0, thieu ben dich 0
+
+Ket qua: 1843 mail doi chieu, 0 lech ngay (0.00%).
+Ngay thang duoc giu nguyen tren toan bo mau kiem tra.
+```
+
+Mặc định lấy mẫu 200 mail mỗi folder, rải đều chứ không dồn về đầu. Muốn kiểm
+toàn bộ: `--sample 0`.
+
+**Chạy `verify` ngay sau khi sync xong mailbox đầu tiên.** Phát hiện ngày sai lúc
+đó chỉ tốn một lần sync lại; phát hiện sau khi xong cả 20 hộp thư thì tốn cả đêm.
+
+### Nếu ngày vẫn lệch
+
+Đổi trong `config.ini`:
+
+```ini
+date_source = header
+```
+
+Lúc này imapsync dùng header `Date:` trong thân mail thay cho `INTERNALDATE`.
+Sync lại mailbox đó rồi `verify` lần nữa.
+
+Chọn `header` cũng hợp lý trong một trường hợp khác: nếu hộp thư Gmail trước đây
+đã import từ nơi khác, `INTERNALDATE` của Gmail là ngày *import* chứ không phải
+ngày thật — khi đó `header` cho ra ngày đúng hơn.
+
+Còn nếu cả hai đều lệch thì IceWarp đang ghi đè `INTERNALDATE` lúc APPEND, phải
+hỏi nhà cung cấp — không có tham số imapsync nào chữa được.
 
 ---
 
@@ -274,9 +348,10 @@ migrate_mail/
   imaputf7.py              giải mã tên folder để hiển thị
   runner.py                dựng và chạy lệnh imapsync, đọc kết quả
   hints.py                 dịch lỗi imapsync thành việc cần làm
+  verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     91 test, không chạm mạng
+tests/                     119 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 

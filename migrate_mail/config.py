@@ -50,6 +50,11 @@ class SyncConf:
     trash_folder: str = "Trash"
     junk_folder: str = "Spam"
 
+    # Nguon ngay thang gan cho mail ben IceWarp:
+    #   internal = INTERNALDATE cua Gmail (ngay mail vao hop thu) -- mac dinh
+    #   header   = header Date: trong than mail (ngay nguoi gui gui di)
+    date_source: str = "internal"
+
     filterflags: bool = True
     usecache: bool = True
     extra_args: List[str] = field(default_factory=list)
@@ -84,6 +89,14 @@ class Config:
     sync: SyncConf
     paths: Paths
     path: Path
+
+
+def _date_source(value: str) -> str:
+    v = (value or "internal").strip().lower()
+    if v not in ("internal", "header"):
+        raise ValueError(
+            "[sync] date_source phai la 'internal' hoac 'header', dang co: %r" % value)
+    return v
 
 
 def _server(cp: configparser.ConfigParser, section: str, default_host: str = "") -> ServerConf:
@@ -121,6 +134,7 @@ def load_config(path: Path) -> Config:
         drafts_folder=cp.get(s, "drafts_folder", fallback="Drafts").strip(),
         trash_folder=cp.get(s, "trash_folder", fallback="Trash").strip(),
         junk_folder=cp.get(s, "junk_folder", fallback="Spam").strip(),
+        date_source=_date_source(cp.get(s, "date_source", fallback="internal")),
         filterflags=cp.getboolean(s, "filterflags", fallback=True),
         usecache=cp.getboolean(s, "usecache", fallback=True),
         extra_args=shlex.split(cp.get(s, "extra_args", fallback="")),

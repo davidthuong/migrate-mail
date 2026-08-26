@@ -132,6 +132,28 @@ def list_folders(cfg: Config, user: User, timeout: int = 60) -> List[Folder]:
             pass
 
 
+def open_connection(cfg: Config, user: User, side: str, timeout: int = 120):
+    """Mo va dang nhap mot dau. side = 'source' | 'dest'. Nem DiscoveryError neu hong."""
+    server = cfg.source if side == "source" else cfg.dest
+    login = user.src_user if side == "source" else user.dst_user
+    password = user.src_password if side == "source" else user.dst_password
+    label = "Gmail" if side == "source" else "IceWarp"
+    try:
+        conn = _connect(server, timeout)
+    except (socket.error, OSError) as exc:
+        raise DiscoveryError("khong ket noi %s (%s:%s): %s"
+                             % (label, server.host, server.port, exc))
+    try:
+        conn.login(login, password)
+    except imaplib.IMAP4.error as exc:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+        raise DiscoveryError("login %s that bai: %s" % (label, clean_imap_error(exc)))
+    return conn
+
+
 def check_login(cfg: Config, user: User, side: str, timeout: int = 60) -> Tuple[bool, str]:
     """Thu login mot dau. side = 'source' | 'dest'."""
     server = cfg.source if side == "source" else cfg.dest

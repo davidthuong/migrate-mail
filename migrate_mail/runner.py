@@ -105,6 +105,17 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
     if plan is not None:
         cmd += plan.imapsync_args()
 
+    # --- Giu ngay thang cua mail -------------------------------------------
+    # Day la nguyen nhan cua trieu chung "mail nhay het ve ngay migrate".
+    # imapsync mac dinh da bat syncinternaldates, nhung ta viet ra tuong minh
+    # de nhin thay trong log, va de khong phu thuoc vao mac dinh co the doi.
+    #   internal: dung INTERNALDATE cua Gmail (ngay mail vao hop thu Gmail)
+    #   header  : dung header Date: trong than mail (ngay nguoi gui gui di)
+    if sync.date_source == "header":
+        cmd += ["--idatefromheader"]
+    else:
+        cmd += ["--syncinternaldates"]
+
     # Gmail co the sua header Received, nen chi dinh danh mail bang Message-Id.
     cmd += ["--useheader", "Message-Id"]
     # Mail thieu Message-Id (hay gap o Drafts) se bi coi la moi o moi lan chay
