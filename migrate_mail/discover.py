@@ -12,6 +12,7 @@ from __future__ import annotations
 import imaplib
 import re
 import socket
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -61,6 +62,25 @@ class Plan:
         for folder, dest in self.mapped:
             args += ["--f1f2", "%s:%s" % (folder.raw, dest)]
         return args
+
+    def destinations(self) -> "OrderedDict":
+        """Ten folder ben dich -> danh sach folder nguon se do vao do."""
+        out: "OrderedDict[str, List[Folder]]" = OrderedDict()
+        for folder, dest in self.mapped:
+            out.setdefault(dest, []).append(folder)
+        for folder in self.kept:
+            out.setdefault(folder.raw, []).append(folder)
+        return out
+
+    def collisions(self) -> List[Tuple[str, List["Folder"]]]:
+        """Cac folder dich co nhieu hon mot folder nguon do vao.
+
+        Hay gap khi hop thu Gmail truoc day da import tu Outlook: ben canh
+        "[Gmail]/Thu nhap" (special-use Drafts) con co mot label ten "Drafts"
+        sot lai. Ca hai deu ra "Drafts" ben dich va bi tron lam mot.
+        """
+        return [(dest, sources) for dest, sources in self.destinations().items()
+                if len(sources) > 1]
 
 
 class DiscoveryError(Exception):

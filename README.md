@@ -140,6 +140,35 @@ Nghĩa là IceWarp đang gọi folder rác bằng tên khác (`Junk E-mail` ch�
 Nếu cứ chạy, hộp thư sẽ có **hai folder rác song song** và bộ lọc IceWarp vẫn
 dùng folder cũ. Sửa `junk_folder` trong `config.ini` cho khớp rồi chạy tiếp.
 
+**Tài khoản IceWarp mới tinh thường chỉ có `INBOX` và `Spam`.** IceWarp chỉ sinh
+ra `Sent`/`Drafts`/`Trash` khi user đăng nhập và thực sự dùng. Nếu để imapsync
+tạo trước, sau này IceWarp có thể tạo thêm bộ của nó với tên khác → hộp thư có
+hai bộ folder. Cách chắc ăn: đăng nhập WebClient bằng tài khoản đó một lần, gửi
+một mail thử, lưu một draft, xoá một mail — rồi chạy lại `discover --dest` để
+xem tên thật IceWarp đặt, và sửa `config.ini` cho khớp.
+
+### Nhiều folder Gmail đổ chung vào một folder đích
+
+`discover` còn cảnh báo khi hai folder nguồn cùng ra một tên đích:
+
+```
+!! TRUNG TEN FOLDER DICH !!
+  Drafts  <-  [Gmail]/Thư nháp, Drafts
+```
+
+Rất hay gặp với hộp thư **trước đây đã import từ Outlook vào Gmail**: bên cạnh
+folder chuẩn của Gmail còn sót lại label cũ cùng công dụng (`Drafts`,
+`Sent Items`, `Khác`, `Ưu tiên`...). Cả hai sẽ trộn làm một bên IceWarp.
+
+Không mất mail, nhưng nên là quyết định có ý thức. Muốn giữ riêng thì đổi tên
+label cũ trong `config.ini`:
+
+```ini
+extra_args = --regextrans2 s,^Drafts$,Drafts-cu,
+```
+
+Hoặc đổi tên đích của folder Gmail: `drafts_folder = Drafts-gmail`.
+
 ### Kiểm bằng mắt sau khi xong
 
 Đăng nhập IceWarp WebClient bằng chính tài khoản đó:
@@ -419,7 +448,7 @@ migrate_mail/
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     132 test, không chạm mạng
+tests/                     138 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 

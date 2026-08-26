@@ -160,6 +160,25 @@ def _print_plan(user: User, plan: Plan) -> None:
         say("  GIU NGUYEN:")
         for f in plan.kept:
             say("    - %s" % f.display)
+    _print_collisions(plan)
+
+
+def _print_collisions(plan: Plan) -> None:
+    collisions = plan.collisions()
+    if not collisions:
+        return
+    say("")
+    say("  !! TRUNG TEN FOLDER DICH !!")
+    say("  Nhieu folder Gmail se do chung vao mot folder ben IceWarp:")
+    for dest, sources in collisions:
+        say("    %s  <-  %s" % (dest, ", ".join(f.display for f in sources)))
+    say("")
+    say("  Thuong gap khi hop thu Gmail truoc day da import tu Outlook: ben canh")
+    say("  folder chuan cua Gmail con sot lai label cu cung cong dung.")
+    say("  Neu muon giu rieng, doi ten label cu bang extra_args trong config.ini:")
+    for dest, _sources in collisions:
+        say("    extra_args = --regextrans2 s,^%s$,%s-cu," % (dest, dest))
+    say("  Neu tron chung la y muon thi cu chay tiep, khong mat mail.")
 
 
 def _print_dest_folders(cfg: Config, user: User) -> int:
@@ -283,6 +302,10 @@ def cmd_sync(args, cfg: Config) -> int:
                 plans[user.src_user] = plan
                 say("  OK   %-32s %d folder chuyen, %d bo qua"
                     % (user.src_user, len(plan.mapped) + len(plan.kept), len(plan.excluded)))
+                for dest, sources in plan.collisions():
+                    say("       CANH BAO: %d folder do chung vao '%s': %s"
+                        % (len(sources), dest, ", ".join(f.display for f in sources)))
+                    say("       Xem './mm.py discover' de biet cach tach rieng.")
 
     todo = [u for u in users if u.src_user in plans]
     if not todo:

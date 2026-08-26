@@ -205,3 +205,56 @@ class TestUtf7(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# Hop thu Gmail da tung import tu Outlook: ben canh folder chuan cua Gmail
+# (ten tieng Viet, co SPECIAL-USE) con sot lai cac label kieu Outlook.
+GMAIL_SAU_KHI_IMPORT_OUTLOOK = [
+    imap_line("HasNoChildren", "INBOX"),
+    imap_line("HasChildren Noselect", "[Gmail]"),
+    imap_line("All HasNoChildren", "[Gmail]/T&HqU-t c&HqM- th&AbA-"),
+    imap_line("HasNoChildren Sent", "[Gmail]/Th&AbA- &AREA4w- g&Hu0-i"),
+    imap_line("Drafts HasNoChildren", "[Gmail]/Th&AbA- nh&AOE-p"),
+    imap_line("HasNoChildren Trash", "[Gmail]/Th&APk-ng r&AOE-c"),
+    imap_line("HasNoChildren Junk", "[Gmail]/Th&AbA- r&AOE-c"),
+    imap_line("HasNoChildren", "Drafts"),        # sot lai tu Outlook
+    imap_line("HasNoChildren", "Sent Items"),    # sot lai tu Outlook
+    imap_line("HasNoChildren", "ESET Antispam"),
+]
+
+
+class TestDestinationCollisions(unittest.TestCase):
+    def test_detects_label_colliding_with_mapped_folder(self):
+        """Label 'Drafts' con sot va [Gmail]/Thu nhap deu ra 'Drafts' ben dich."""
+        plan = build_plan(parse(GMAIL_SAU_KHI_IMPORT_OUTLOOK), SyncConf())
+        collisions = dict((d, [f.display for f in s]) for d, s in plan.collisions())
+        self.assertIn("Drafts", collisions)
+        self.assertEqual(len(collisions["Drafts"]), 2)
+        self.assertIn("Drafts", collisions["Drafts"])
+        self.assertIn(u"[Gmail]/Thư nháp", collisions["Drafts"])
+
+    def test_differently_named_leftover_does_not_collide(self):
+        # 'Sent Items' khac ten voi 'Sent' nen khong tron
+        plan = build_plan(parse(GMAIL_SAU_KHI_IMPORT_OUTLOOK), SyncConf())
+        self.assertNotIn("Sent", dict(plan.collisions()))
+
+    def test_clean_mailbox_has_no_collisions(self):
+        self.assertEqual(build_plan(parse(GMAIL_EN), SyncConf()).collisions(), [])
+
+    def test_renaming_dest_in_config_resolves_the_collision(self):
+        plan = build_plan(parse(GMAIL_SAU_KHI_IMPORT_OUTLOOK),
+                          SyncConf(drafts_folder="Drafts-gmail"))
+        self.assertEqual(plan.collisions(), [])
+
+    def test_collision_appears_when_two_specials_map_to_one_name(self):
+        cfg = SyncConf(drafts_folder="Luu", trash_folder="Luu")
+        plan = build_plan(parse(GMAIL_EN), cfg)
+        self.assertEqual([d for d, _ in plan.collisions()], ["Luu"])
+
+    def test_destinations_lists_every_transferred_folder(self):
+        plan = build_plan(parse(GMAIL_SAU_KHI_IMPORT_OUTLOOK), SyncConf())
+        dests = plan.destinations()
+        self.assertEqual(sum(len(v) for v in dests.values()),
+                         len(plan.mapped) + len(plan.kept))
+        for name in ("INBOX", "Sent", "Trash", "Spam", "Sent Items", "ESET Antispam"):
+            self.assertIn(name, dests)
