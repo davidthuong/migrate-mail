@@ -288,8 +288,49 @@ def imapsync_help(cfg: Config, timeout: int = 30) -> str:
     return imapsync_run(cfg, "--help", timeout)
 
 
+# Bang tuy chon that cua imapsync nam trong loi goi GetOptions, dang:
+#     'filterflags!'        => \$mysync->{ filterflags },
+#     'exclude=s@'          => \$mysync->{ exclude },
+#     'host1|h1=s'          => \$mysync->{ host1 },
+_OPTION_DECL_RE = re.compile(
+    r"'([a-zA-Z][a-zA-Z0-9_-]*)((?:\|[a-zA-Z0-9_-]+)*)([!+]?)(?:[=:][sifo][@%]?)?'\s*=>")
+
+
+def declared_options(script_path: str) -> set:
+    """Doc truc tiep bang tuy chon trong ma nguon imapsync.
+
+    Khong dung `--help` vi co nhung tuy chon co that nhung khong duoc ghi trong
+    help (vd --filterflags). Doi chieu voi help se bao dong gia.
+    """
+    try:
+        with open(script_path, "r", encoding="utf-8", errors="replace") as fh:
+            source = fh.read()
+    except OSError:
+        return set()
+
+    names, negatable = set(), set()
+    for m in _OPTION_DECL_RE.finditer(source):
+        aliases = [m.group(1)] + [a for a in m.group(2).split("|") if a]
+        for name in aliases:
+            names.add(name)
+            if m.group(3) == "!":
+                negatable.add(name)
+    # Getopt::Long: hau to '!' tu sinh them dang phu dinh no<ten>,
+    # nen --nofoldersizes hop le du chi co 'foldersizes!' duoc khai bao.
+    names |= {"no" + n for n in negatable}
+    return names
+
+
 def unsupported_flags(cfg: Config, flags: List[str]) -> List[str]:
-    """Doi chieu cac flag ta dinh dung voi `imapsync --help` cua ban dang cai."""
+    """Tra ve cac flag tool dinh dung ma ban imapsync dang cai khong nhan."""
+    path = imapsync_available(cfg)
+    if path:
+        declared = declared_options(path)
+        # Ban imapsync dong goi san (binary) khong doc duoc ma nguon; khi do
+        # so option trich duoc se rat it -> quay ve doi chieu voi --help.
+        if len(declared) > 50:
+            return [f for f in flags if f.lstrip("-") not in declared]
+
     help_text = imapsync_help(cfg)
     if not help_text:
         return []
@@ -298,12 +339,12 @@ def unsupported_flags(cfg: Config, flags: List[str]) -> List[str]:
 
 def flags_used(cfg: Config) -> List[str]:
     """Danh sach flag tool nay co the sinh ra, de lenh `doctor` kiem tra."""
-    base = [
+    return [
         "--host1", "--port1", "--ssl1", "--notls1", "--user1", "--passfile1",
         "--host2", "--port2", "--ssl2", "--notls2", "--user2", "--passfile2",
         "--exclude", "--f1f2", "--useheader", "--addheader", "--filterflags",
         "--skipcrossduplicates", "--nousecache", "--maxsize", "--maxbytespersecond",
         "--maxage", "--timeout", "--errorsmax", "--nofoldersizes", "--noreleasecheck",
         "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders",
+        "--syncinternaldates", "--idatefromheader",
     ]
-    return base

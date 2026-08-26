@@ -60,12 +60,13 @@ def cmd_doctor(args, cfg: Config) -> int:
 
         missing = unsupported_flags(cfg, flags_used(cfg))
         if missing:
-            say("[CANH] ban imapsync nay khong nhac toi cac flag sau trong --help:")
+            say("[LOI ] ban imapsync nay khong chap nhan cac flag sau:")
             say("       %s" % " ".join(missing))
-            say("       Kiem tra lai bang 'imapsync --help' truoc khi chay that.")
+            say("       imapsync se dung ngay khi gap tuy chon la, nen phai sua")
+            say("       truoc khi chay that.")
             problems += 1
         else:
-            say("[ OK ] moi flag tool dung deu co trong 'imapsync --help'")
+            say("[ OK ] ban imapsync nay chap nhan moi flag tool dung")
 
     try:
         users = load_users(args.users)

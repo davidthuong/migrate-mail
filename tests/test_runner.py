@@ -213,3 +213,93 @@ class TestParseOutput(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# Trich tu ma nguon imapsync that (bang GetOptions). Cac tuy chon nay la co
+# that, du mot so KHONG duoc ghi trong --help -- do chinh la ly do phai doc
+# bang GetOptions thay vi doc help.
+GETOPTIONS_SNIPPET = """
+        'host1|h1=s'          => \$mysync->{ host1 },
+        'port1=i'             => \$mysync->{ port1 },
+        'ssl1!'               => \$mysync->{ ssl1 },
+        'tls1!'               => \$mysync->{ tls1 },
+        'exclude=s@'          => \$mysync->{ exclude },
+        'regexflag=s@'        => \$mysync->{ regexflag },
+        'filterflags!'        => \$mysync->{ filterflags },
+        'foldersizes!'        => \$mysync->{ foldersizes },
+        'releasecheck!'       => \$mysync->{ releasecheck },
+        'log!'                => \$mysync->{ log },
+        'syncinternaldates!'  => \$mysync->{ syncinternaldates },
+        'idatefromheader!'    => \$mysync->{ idatefromheader },
+        'dry!'                => \$mysync->{ dry },
+        'tmpdir=s'            => \$mysync->{ tmpdir },
+"""
+
+
+class TestDeclaredOptions(unittest.TestCase):
+    def parse(self, text):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "imapsync"
+            p.write_text(text, encoding="utf-8")
+            from migrate_mail.runner import declared_options
+            return declared_options(str(p))
+
+    def test_reads_plain_options(self):
+        opts = self.parse(GETOPTIONS_SNIPPET)
+        for name in ("host1", "port1", "exclude", "tmpdir", "filterflags"):
+            self.assertIn(name, opts)
+
+    def test_reads_aliases(self):
+        self.assertIn("h1", self.parse(GETOPTIONS_SNIPPET))
+
+    def test_negatable_options_get_a_no_form(self):
+        """Getopt::Long: hau to '!' tu sinh dang --noXXX du khong khai bao."""
+        opts = self.parse(GETOPTIONS_SNIPPET)
+        for name in ("nofoldersizes", "noreleasecheck", "nolog", "notls1", "nossl1"):
+            self.assertIn(name, opts)
+
+    def test_value_options_do_not_get_a_no_form(self):
+        opts = self.parse(GETOPTIONS_SNIPPET)
+        self.assertNotIn("noexclude", opts)
+        self.assertNotIn("notmpdir", opts)
+
+    def test_unknown_names_are_absent(self):
+        opts = self.parse(GETOPTIONS_SNIPPET)
+        self.assertNotIn("khongcothat", opts)
+        self.assertNotIn("filterflagsX", opts)
+
+    def test_unreadable_file_gives_empty_set(self):
+        from migrate_mail.runner import declared_options
+        self.assertEqual(declared_options("/khong/ton/tai/imapsync"), set())
+
+
+class TestUnsupportedFlags(unittest.TestCase):
+    """Bug that: --filterflags co trong GetOptions nhung KHONG co trong --help.
+
+    Kiem tra dua vao --help se bao dong gia va lam nguoi dung tuong tool hong.
+    """
+
+    def check(self, script_text, flags):
+        import migrate_mail.runner as R
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "imapsync"
+            p.write_text(script_text, encoding="utf-8")
+            cfg = make_cfg()
+            cfg.paths.imapsync = str(p)
+            return R.unsupported_flags(cfg, flags)
+
+    def test_undocumented_but_real_option_is_not_flagged(self):
+        # Nhan ban snippet cho du >50 option de kich hoat nhanh doc GetOptions
+        big = GETOPTIONS_SNIPPET + "".join(
+            "        'opt%d!' => \$m->{ x },\n" % i for i in range(60))
+        self.assertEqual(self.check(big, ["--filterflags"]), [])
+
+    def test_genuinely_unknown_option_is_flagged(self):
+        big = GETOPTIONS_SNIPPET + "".join(
+            "        'opt%d!' => \$m->{ x },\n" % i for i in range(60))
+        self.assertEqual(self.check(big, ["--khongcothat"]), ["--khongcothat"])
+
+    def test_negated_form_of_real_option_is_accepted(self):
+        big = GETOPTIONS_SNIPPET + "".join(
+            "        'opt%d!' => \$m->{ x },\n" % i for i in range(60))
+        self.assertEqual(self.check(big, ["--nofoldersizes", "--nolog"]), [])

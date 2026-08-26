@@ -36,7 +36,8 @@ FLAGS = [
     "--exclude", "--f1f2", "--useheader", "--addheader", "--filterflags",
     "--skipcrossduplicates", "--nousecache", "--maxsize", "--maxbytespersecond",
     "--maxage", "--timeout", "--errorsmax", "--nofoldersizes", "--noreleasecheck",
-    "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders", "--version", "--help",
+    "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders",
+    "--syncinternaldates", "--idatefromheader", "--version", "--help",
 ]
 
 

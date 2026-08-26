@@ -173,9 +173,15 @@ python3 mm.py doctor
 ```
 
 Kiểm tra imapsync chạy được, `users.csv` parse được, thư mục ghi được. Có một
-bước đáng chú ý: nó **đối chiếu mọi flag tool sẽ dùng với `imapsync --help` của
-bản đang cài**. Bản imapsync khác nhau có bộ flag khác nhau; thà biết ngay bây
-giờ còn hơn phát hiện lúc 2 giờ sáng.
+bước đáng chú ý: nó **đối chiếu mọi flag tool sẽ dùng với bảng tuỳ chọn thật của
+bản imapsync đang cài** — đọc trực tiếp khối `GetOptions` trong mã nguồn, không
+đọc `--help`. Lý do: imapsync có những tuỳ chọn dùng được nhưng không ghi trong
+help (`--filterflags` là một ví dụ), đối chiếu với help sẽ báo động giả. Nếu
+imapsync là bản đóng gói sẵn không đọc được mã nguồn, tool tự quay về dùng
+`--help`.
+
+imapsync dừng ngay khi gặp tuỳ chọn lạ, nên thà biết bây giờ còn hơn phát hiện
+lúc 2 giờ sáng.
 
 ### 2. `preflight` — thử đăng nhập cả hai đầu
 
@@ -413,7 +419,7 @@ migrate_mail/
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     123 test, không chạm mạng
+tests/                     132 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 

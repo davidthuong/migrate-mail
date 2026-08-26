@@ -95,7 +95,7 @@ class TestDoctor(CliTestCase):
 
     def test_flags_are_checked_against_installed_imapsync(self):
         _code, out = self.run_cli("doctor")
-        self.assertIn("moi flag tool dung deu co trong", out)
+        self.assertIn("chap nhan moi flag tool dung", out)
 
     def test_missing_imapsync_is_an_error(self):
         (self.tmp / "config.ini").write_text(
