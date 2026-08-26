@@ -13,8 +13,9 @@ from typing import Dict, List, Optional, Tuple
 
 from . import __version__, report, verify
 from .config import Config, load_config
-from .discover import (DiscoveryError, Plan, build_plan, check_login,
-                       list_folders, open_connection)
+from .discover import (NOSELECT, SPECIAL_DRAFTS, SPECIAL_JUNK, SPECIAL_SENT,
+                       SPECIAL_TRASH, DiscoveryError, Plan, build_plan,
+                       check_login, list_folders, open_connection)
 from .runner import (MODE_DRY, MODE_SYNC, Result, flags_used, imapsync_available,
                      imapsync_run, run_user, unsupported_flags, user_statedir)
 from .users import User, filter_users, load_users
@@ -160,8 +161,60 @@ def _print_plan(user: User, plan: Plan) -> None:
             say("    - %s" % f.display)
 
 
+def _print_dest_folders(cfg: Config, user: User) -> int:
+    """Liet ke folder co san ben IceWarp va canh bao neu ten map khong khop.
+
+    Can buoc nay vi neu IceWarp goi folder rac la 'Junk E-mail' ma ta lai map
+    sang 'Spam', imapsync se tao them mot folder 'Spam' moi -- ket qua la hop
+    thu co hai folder rac song song, va bo loc cua IceWarp van dung folder cu.
+    """
+    say("")
+    say("=== %s (ben IceWarp) ===" % user.dst_user)
+    try:
+        folders = list_folders(cfg, user, side="dest")
+    except DiscoveryError as exc:
+        say("  LOI: %s" % exc)
+        return 1
+
+    existing = {f.display for f in folders}
+    for f in sorted(folders, key=lambda x: x.display.lower()):
+        marks = []
+        if f.has(NOSELECT):
+            marks.append("khong chua mail")
+        for flag, label in ((SPECIAL_SENT, "Sent"), (SPECIAL_DRAFTS, "Drafts"),
+                            (SPECIAL_TRASH, "Trash"), (SPECIAL_JUNK, "Junk")):
+            if f.has(flag):
+                marks.append("special-use: %s" % label)
+        say("    - %-38s %s" % (f.display, "  ".join(marks)))
+
+    wanted = {
+        "sent_folder": cfg.sync.sent_folder,
+        "drafts_folder": cfg.sync.drafts_folder,
+        "trash_folder": cfg.sync.trash_folder,
+        "junk_folder": cfg.sync.junk_folder,
+    }
+    missing = {k: v for k, v in wanted.items() if v not in existing}
+    if missing:
+        say("")
+        say("  CANH BAO: cac ten sau trong config.ini chua co ben IceWarp,")
+        say("  imapsync se TAO MOI folder trung ten:")
+        for key, value in missing.items():
+            say("    %-14s = %s" % (key, value))
+        say("  Neu IceWarp da co folder cung cong dung nhung khac ten, hay sua")
+        say("  config.ini cho khop de mail khong bi tach ra hai noi.")
+    return 0
+
+
 def cmd_discover(args, cfg: Config) -> int:
     users = filter_users(load_users(args.users), args.only)
+
+    if args.dest:
+        say("Liet ke folder cua %d mailbox tren %s..." % (len(users), cfg.dest.host))
+        failed = sum(_print_dest_folders(cfg, u) for u in users)
+        say("")
+        say("Xong. %d/%d mailbox doc duoc." % (len(users) - failed, len(users)))
+        return 0 if failed == 0 else 1
+
     say("Do folder cua %d mailbox tren %s...\n" % (len(users), cfg.source.host))
     failed = 0
     with futures.ThreadPoolExecutor(max_workers=min(8, max(1, len(users)))) as pool:
@@ -442,6 +495,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     dc = sub.add_parser("discover", help="xem folder Gmail va ke hoach chuyen doi")
     dc.add_argument("--only", default="")
+    dc.add_argument("--dest", action="store_true",
+                    help="liet ke folder co san ben IceWarp thay vi ben Gmail")
     dc.set_defaults(func=cmd_discover)
 
     s = sub.add_parser("sync", help="chay migration")

@@ -287,3 +287,54 @@ class TestConfigErrors(CliTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestDiscoverDest(CliTestCase):
+    """`discover --dest` phai canh bao khi ten folder IceWarp khac config."""
+
+    def run_dest(self, dest_folders):
+        from migrate_mail.discover import Folder
+
+        def fake(cfg, user, side="source", timeout=60):
+            if side != "dest":
+                raise AssertionError("phai hoi dau dich")
+            return [Folder(raw=n, display=n, flags=set(fl), delim="/")
+                    for n, fl in dest_folders]
+
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake):
+            return self.run_cli("discover", "--dest", "--only", "an@cu.com")
+
+    def test_warns_when_configured_name_absent(self):
+        code, out = self.run_dest([
+            ("INBOX", []), ("Sent", ["sent"]), ("Drafts", ["drafts"]),
+            ("Trash", ["trash"]), ("Junk E-mail", ["junk"]),
+        ])
+        self.assertEqual(code, 0, out)
+        self.assertIn("CANH BAO", out)
+        self.assertIn("junk_folder", out)          # Spam khong co -> canh bao
+        self.assertNotIn("sent_folder", out)       # Sent co -> khong canh bao
+
+    def test_no_warning_when_every_name_matches(self):
+        code, out = self.run_dest([
+            ("INBOX", []), ("Sent", ["sent"]), ("Drafts", ["drafts"]),
+            ("Trash", ["trash"]), ("Spam", ["junk"]),
+        ])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("CANH BAO", out)
+
+    def test_shows_special_use_of_dest_folders(self):
+        _code, out = self.run_dest([("INBOX", []), ("Junk E-mail", ["junk"]),
+                                    ("Sent", ["sent"]), ("Drafts", ["drafts"]),
+                                    ("Trash", ["trash"]), ("Spam", ["junk"])])
+        self.assertIn("special-use: Junk", out)
+
+    def test_login_failure_is_reported(self):
+        from migrate_mail.discover import DiscoveryError
+
+        def boom(cfg, user, side="source", timeout=60):
+            raise DiscoveryError("login IceWarp that bai: Authentication failed")
+
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=boom):
+            code, out = self.run_cli("discover", "--dest", "--only", "an@cu.com")
+        self.assertEqual(code, 1)
+        self.assertIn("Authentication failed", out)

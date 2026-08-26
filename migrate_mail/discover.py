@@ -98,16 +98,21 @@ def _connect(server, timeout: int):
     return imaplib.IMAP4(server.host, server.port, timeout=timeout)
 
 
-def list_folders(cfg: Config, user: User, timeout: int = 60) -> List[Folder]:
-    """Dang nhap Gmail bang app password va liet ke toan bo folder."""
+def list_folders(cfg: Config, user: User, side: str = "source",
+                 timeout: int = 60) -> List[Folder]:
+    """Dang nhap mot dau va liet ke toan bo folder. side = 'source' | 'dest'."""
+    server = cfg.source if side == "source" else cfg.dest
+    login = user.src_user if side == "source" else user.dst_user
+    password = user.src_password if side == "source" else user.dst_password
     try:
-        conn = _connect(cfg.source, timeout)
+        conn = _connect(server, timeout)
     except (socket.error, OSError) as exc:
-        raise DiscoveryError("khong ket noi duoc %s:%s (%s)" % (cfg.source.host, cfg.source.port, exc))
+        raise DiscoveryError("khong ket noi duoc %s:%s (%s)"
+                             % (server.host, server.port, exc))
 
     try:
         try:
-            conn.login(user.src_user, user.src_password)
+            conn.login(login, password)
         except imaplib.IMAP4.error as exc:
             raise DiscoveryError("login that bai: %s" % clean_imap_error(exc))
 

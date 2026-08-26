@@ -106,6 +106,64 @@ trong `config.example.ini`.
 
 ---
 
+## Chạy thử một mailbox trước
+
+Đừng chạy cả danh sách ngay lần đầu. Cho đủ 20 dòng vào `users.csv`, rồi dùng
+`--only` để chỉ đụng vào một hộp thư.
+
+**Chọn hộp thư nào:** một hộp **dưới 2.5 GB** (Gmail giới hạn 2500 MB/ngày, hộp
+lớn hơn không xong trong ngày) và có đủ Sent, Drafts, vài label lồng nhau — như
+vậy mới kiểm được phần đổi tên folder.
+
+```bash
+U=an.nguyen@congty-cu.com
+
+python3 mm.py doctor                      # 1. môi trường
+python3 mm.py preflight --only $U         # 2. đăng nhập được cả hai đầu
+python3 mm.py discover  --only $U         # 3. folder Gmail + kế hoạch chuyển
+python3 mm.py discover  --dest --only $U  # 4. folder thật bên IceWarp
+python3 mm.py sync --dry --only $U        # 5. chạy khan, không ghi gì
+python3 mm.py sync      --only $U         # 6. chạy thật
+python3 mm.py verify    --only $U         # 7. kiểm chứng ngày tháng
+```
+
+**Bước 4 là bước dễ bỏ sót nhất.** Nó liệt kê folder có sẵn trên IceWarp và cảnh
+báo nếu tên trong `config.ini` không khớp:
+
+```
+CANH BAO: cac ten sau trong config.ini chua co ben IceWarp,
+imapsync se TAO MOI folder trung ten:
+  junk_folder    = Spam
+```
+
+Nghĩa là IceWarp đang gọi folder rác bằng tên khác (`Junk E-mail` chẳng hạn).
+Nếu cứ chạy, hộp thư sẽ có **hai folder rác song song** và bộ lọc IceWarp vẫn
+dùng folder cũ. Sửa `junk_folder` trong `config.ini` cho khớp rồi chạy tiếp.
+
+### Kiểm bằng mắt sau khi xong
+
+Đăng nhập IceWarp WebClient bằng chính tài khoản đó:
+
+- Cây folder có khớp với phần "GIỮ NGUYÊN" / "ĐỔI TÊN" mà `discover` in ra không?
+- Sắp xếp Inbox theo ngày — mail cũ nhất có đúng là mail cũ nhất bên Gmail không?
+- Mở vài mail có đính kèm, kiểm tra tiếng Việt trong tiêu đề hiển thị đúng.
+- Xem folder Sent có mail không (hay bị rỗng vì map sai tên).
+
+### Muốn chạy lại từ đầu cho sạch
+
+Vì imapsync bỏ qua mail đã có, chạy lại sẽ không nhân đôi — nhưng cũng không dọn
+cái đã sang. Muốn thử lại từ trạng thái trắng:
+
+```bash
+rm -rf state/an.nguyen@congty-cu.com     # xoá cache + dấu hoàn thành
+```
+
+rồi xoá sạch mailbox đó trong IceWarp Admin trước khi sync lần nữa.
+
+Xong bước này, chạy phần còn lại bỏ `--only` đi là được.
+
+---
+
 ## Quy trình chạy
 
 ### 1. `doctor` — kiểm tra môi trường
@@ -136,6 +194,10 @@ python3 mm.py discover
 
 In ra folder nào bị **bỏ qua**, folder nào **đổi tên**, folder nào **giữ nguyên**,
 cho từng mailbox. Đọc kỹ phần "BỎ QUA" — đó là những gì sẽ không sang IceWarp.
+
+Thêm `--dest` để xem folder có sẵn bên IceWarp thay vì bên Gmail. Lệnh này cảnh
+báo khi tên trong `config.ini` không khớp tên thật của IceWarp — nếu bỏ qua,
+hộp thư sẽ có hai folder cùng công dụng nhưng khác tên.
 
 ### 4. `sync --dry` — chạy thử
 
@@ -351,7 +413,7 @@ migrate_mail/
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     119 test, không chạm mạng
+tests/                     123 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 
