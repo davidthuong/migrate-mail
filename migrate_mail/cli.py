@@ -447,9 +447,12 @@ def _print_sizes(results: List[Result]) -> None:
     say("Tong: %s mail, %s."
         % ("{:,}".format(total_msgs).replace(",", "."), report.human_bytes(total_bytes)))
     say("")
-    say("Gmail chi cho tai ve %s moi ngay cho MOI account, va gioi han nay tinh"
-        % report.human_bytes(GMAIL_DAILY_LIMIT))
-    say("rieng tung account nen chay song song khong bi cong don.")
+    # Google cong bo con so nay la "2500 MB", viet y nguyen de doi chieu duoc
+    # voi tai lieu cua ho thay vi quy ra GiB.
+    say("Gmail chi cho tai ve 2500 MB moi ngay cho MOI account.")
+    say("Gioi han tinh rieng tung account, nen chay nhieu mailbox song song")
+    say("KHONG bi cong don -- tong thoi gian la cua hop thu lau nhat, khong")
+    say("phai tong cua tat ca.")
     if max_days > 1:
         say("")
         say("Hop thu lon nhat can khoang %d ngay. Moi ngay chay lai dung lenh sync:" % max_days)
