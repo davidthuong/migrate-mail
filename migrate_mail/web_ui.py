@@ -78,6 +78,10 @@ PAGE = r"""<!doctype html>
  .note{color:var(--muted);font-size:12.5px;padding:0 1rem 1rem}
  .err{color:var(--err)}
  .empty{padding:2rem 1rem;text-align:center;color:var(--muted)}
+ button.rm{padding:.1rem .4rem;font-size:12px;line-height:1.3;color:var(--muted);
+           border-color:transparent;background:transparent}
+ button.rm:hover:not(:disabled){color:var(--err);border-color:var(--err)}
+ td.act{text-align:right;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -110,9 +114,9 @@ PAGE = r"""<!doctype html>
         <th>Nguồn</th><th>Đích</th><th>Kết quả</th>
         <th class="num">Folder</th><th class="num">Mail</th>
         <th class="num">Dung lượng</th><th class="num">Thời gian</th>
-        <th>Ghi chú</th>
+        <th>Ghi chú</th><th></th>
       </tr></thead>
-      <tbody id="rows"><tr><td colspan="9" class="empty">Đang tải…</td></tr></tbody>
+      <tbody id="rows"><tr><td colspan="10" class="empty">Đang tải…</td></tr></tbody>
     </table>
   </section>
 
@@ -141,6 +145,7 @@ PAGE = r"""<!doctype html>
     <div class="note" id="addnote">
       Ghi thẳng vào <code id="usersfile">users.csv</code> trên máy chủ này.
       Mật khẩu không bao giờ được gửi ngược về trình duyệt.
+      Muốn sửa một dòng thì xoá bằng dấu ✕ ở cuối dòng rồi thêm lại.
     </div>
   </section>
 </main>
@@ -175,7 +180,7 @@ function badge(m) {
 function renderRows() {
   const box = $("rows");
   if (!state.mailboxes.length) {
-    box.innerHTML = '<tr><td colspan="9" class="empty">' +
+    box.innerHTML = '<tr><td colspan="10" class="empty">' +
       'Chưa có mailbox nào. Thêm ở khung bên dưới.</td></tr>';
     return;
   }
@@ -193,7 +198,9 @@ function renderRows() {
       '<td class="num">' + esc(m.mail) + "</td>" +
       '<td class="num">' + esc(m.dung_luong) + "</td>" +
       '<td class="num">' + esc(m.thoi_gian) + "</td>" +
-      "<td>" + esc(m.ghi_chu) + tips + warn + "</td></tr>";
+      "<td>" + esc(m.ghi_chu) + tips + warn + "</td>" +
+      '<td class="act"><button class="rm" data-rm="' + esc(m.src_user) +
+      '" title="Xoá khỏi danh sách">✕</button></td></tr>';
   }).join("");
 
   box.querySelectorAll("input[data-u]").forEach((cb) => {
@@ -201,6 +208,11 @@ function renderRows() {
       cb.checked ? selected.add(cb.dataset.u) : selected.delete(cb.dataset.u);
       renderScope();
     };
+  });
+
+  box.querySelectorAll("button[data-rm]").forEach((btn) => {
+    btn.disabled = !!(state.job && state.job.running);
+    btn.onclick = () => removeUser(btn.dataset.rm);
   });
 }
 
@@ -231,6 +243,25 @@ function renderJob() {
     if (stick && atEnd) log.scrollTop = log.scrollHeight;
   }
   document.querySelectorAll("button[data-act]").forEach((b) => { b.disabled = j.running; });
+}
+
+async function removeUser(user) {
+  const msg = "Xoá " + user + " khỏi danh sách?\n\n" +
+    "Chỉ xoá dòng trong users.csv. Mail đã chuyển sang IceWarp và log vẫn còn nguyên.";
+  if (!confirm(msg)) return;
+  try {
+    const res = await fetch("/api/users/remove", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ src_user: user }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || "Không xoá được"); return; }
+    selected.delete(user);
+  } catch (e) {
+    alert("Không gọi được máy chủ: " + e.message);
+  }
+  refresh();
 }
 
 async function refresh() {

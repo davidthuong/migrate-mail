@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -355,3 +356,117 @@ class TestConfigReload(WebTestCase):
         job = self.run_once()
         self.assertIn("khong doc lai duoc config", "\n".join(job["lines"]))
         self.assertEqual(job["exit_code"], 0)     # van chay duoc bang config cu
+
+
+class TestRemoveUser(WebTestCase):
+    def remove(self, src_user):
+        return self.post("/api/users/remove", {"src_user": src_user})
+
+    def test_removes_the_row(self):
+        self.remove("binh@cu.com")
+        users = [m["src_user"] for m in self.state()["mailboxes"]]
+        self.assertNotIn("binh@cu.com", users)
+        self.assertEqual(len(users), 2)
+
+    def test_leaves_other_rows_untouched(self):
+        self.remove("binh@cu.com")
+        from migrate_mail.users import load_users
+        rest = load_users(self.users_path)
+        self.assertEqual([u.src_user for u in rest], ["an@cu.com", "fail.chi@cu.com"])
+        self.assertEqual(rest[0].src_password, "aaaabbbbccccdddd")   # con nguyen
+        self.assertEqual(rest[0].dst_password, "MatKhau1")
+
+    def test_keeps_comments_in_the_file(self):
+        """File cua nguoi dung co ghi chu; xoa mot dong khong duoc nuot chung."""
+        self.remove("binh@cu.com")
+        text = self.users_path.read_text(encoding="utf-8")
+        self.assertIn("# dong ghi chu se bi bo qua", text)
+        self.assertTrue(text.startswith("src_user,"))
+
+    def test_unknown_address_is_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.remove("khongco@cu.com")
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_missing_address_is_rejected(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users/remove", {})
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_refuses_while_a_job_is_running(self):
+        job = web.Job(action="sync", only=[])
+        web.Handler.manager.job = job
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                self.remove("binh@cu.com")
+            self.assertEqual(ctx.exception.code, 409)
+        finally:
+            job.finished = time.time()
+        self.assertIn("binh@cu.com", [m["src_user"] for m in self.state()["mailboxes"]])
+
+    def test_needs_a_token(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users/remove", {"src_user": "binh@cu.com"}, token=False)
+        self.assertEqual(ctx.exception.code, 401)
+
+    def test_does_not_touch_state_or_logs(self):
+        """Mail da chuyen va log la du lieu -- xoa khoi danh sach khong xoa chung."""
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
+            for _ in range(200):
+                job = self.state()["job"]
+                if job and not job["running"]:
+                    break
+                time.sleep(0.05)
+        marker = self.tmp / "state" / "an@cu.com" / "done.marker"
+        self.assertTrue(marker.exists())
+        self.remove("an@cu.com")
+        self.assertTrue(marker.exists())
+        self.assertTrue(list((self.tmp / "logs").glob("an@cu.com.sync.*.log")))
+
+    def test_add_then_remove_round_trip(self):
+        self.post("/api/users", {
+            "src_user": "moi@cu.com", "src_password": "aaaabbbbccccdddd",
+            "dst_user": "moi@moi.vn", "dst_password": "MatKhauMoi"})
+        self.assertEqual(len(self.state()["mailboxes"]), 4)
+        self.remove("moi@cu.com")
+        self.assertEqual(len(self.state()["mailboxes"]), 3)
+
+    def test_file_stays_owner_only_readable(self):
+        self.remove("binh@cu.com")
+        if os.name == "posix":
+            self.assertEqual(oct(self.users_path.stat().st_mode & 0o777), "0o600")
+
+
+class TestPageScript(unittest.TestCase):
+    """Kiem cu phap khoi <script> cua dashboard.
+
+    Loi tung gap: mot dong thieu dau nhay dong lam ca khoi script hong, trang
+    dung o "Dang tai..." nhung moi test Python van xanh vi chung khong chay JS.
+    Test nay bat dung loai loi do. Bo qua neu may khong co node -- no chi la
+    cong cu luc phat trien, chay that khong can node.
+    """
+
+    def script_source(self):
+        from migrate_mail.web_ui import PAGE
+        start = PAGE.index("<script>") + len("<script>")
+        return PAGE[start:PAGE.index("</script>", start)]
+
+    def test_script_parses(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("khong co node tren may nay")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.js"
+            io.open(str(path), "w", encoding="utf-8",
+                    newline="\n").write(self.script_source())
+            # encoding phai chi dinh ro: node in lai dong loi, ma dong do co
+            # tieng Viet -- de mac dinh thi Python decode theo locale va nem
+            # UnicodeDecodeError, lam mat luon thong bao loi.
+            proc = subprocess.run([node, "--check", str(path)],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                  encoding="utf-8", errors="replace", timeout=60)
+            self.assertEqual(proc.returncode, 0, proc.stdout)
+
+    def test_script_is_not_empty(self):
+        self.assertGreater(len(self.script_source()), 1000)

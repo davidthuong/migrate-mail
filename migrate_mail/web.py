@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import secrets
 import threading
 import time
@@ -352,6 +353,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "src_user": added})
             return
 
+        if parsed.path == "/api/users/remove":
+            if self.manager.busy():
+                self._json({"error": "dang co tac vu chay, cho xong roi hay xoa"}, 409)
+                return
+            try:
+                removed = _remove_user(self.users_path, str(body.get("src_user") or ""))
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json({"ok": True, "src_user": removed})
+            return
+
         self._json({"error": "khong tim thay"}, 404)
 
 
@@ -386,6 +399,51 @@ def _add_user(users_path: Path, body: Dict) -> str:
     except OSError:
         pass
     return values["src_user"]
+
+
+def _remove_user(users_path: Path, src_user: str) -> str:
+    """Xoa mot dong khoi users.csv.
+
+    Sua tren tung dong van ban thay vi doc-roi-ghi-lai bang csv writer, de giu
+    nguyen ghi chu va dinh dang ma nguoi dung da viet trong file.
+
+    Chi dong trong users.csv bi xoa. Thu muc state/ va logs/ cua mailbox do
+    KHONG bi dung toi -- day la du lieu, khong tu y xoa ho nguoi dung.
+    """
+    import csv as _csv
+
+    src_user = src_user.strip()
+    if not src_user:
+        raise ValueError("thieu src_user")
+    if not users_path.exists():
+        raise ValueError("khong thay %s" % users_path)
+
+    lines = users_path.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+    keep, removed = [], None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            keep.append(line)
+            continue
+        try:
+            fields = next(_csv.reader([stripped]))
+        except Exception:
+            keep.append(line)
+            continue
+        if fields and fields[0].strip().lower() == src_user.lower():
+            removed = fields[0].strip()
+            continue
+        keep.append(line)
+
+    if removed is None:
+        raise ValueError("%s khong co trong danh sach" % src_user)
+
+    tmp = users_path.with_suffix(users_path.suffix + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+        fh.writelines(keep)
+    os.replace(str(tmp), str(users_path))
+    return removed
 
 
 def serve(cfg: Config, users_path: Path, host: str = "127.0.0.1",

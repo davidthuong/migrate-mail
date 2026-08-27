@@ -414,7 +414,8 @@ Trên dashboard:
 - Bấm chạy từng bước: kiểm tra đăng nhập → kế hoạch folder → tạo cây folder →
   chạy khan → chạy thật → đối chiếu ngày
 - Log chạy trực tiếp, tự cuộn theo
-- Form thêm mailbox, ghi thẳng vào `users.csv`
+- Form thêm mailbox, ghi thẳng vào `users.csv`; dấu ✕ ở cuối mỗi dòng để xoá
+  khỏi danh sách (chỉ xoá dòng trong CSV — mail đã chuyển và log vẫn còn)
 
 Ba nguyên tắc an toàn của giao diện này:
 
@@ -514,7 +515,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     195 test, không chạm mạng
+tests/                     210 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 
