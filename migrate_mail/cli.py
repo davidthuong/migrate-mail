@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures as futures
 import sys
+from contextlib import contextmanager
 import threading
 import time
 from pathlib import Path
@@ -22,10 +23,33 @@ from .users import User, filter_users, load_users
 
 _print_lock = threading.Lock()
 
+# Noi nhan output. Mac dinh la stdout; giao dien web tam thoi doi huong ve no
+# de hien tien do truc tiep, khong phai viet lai logic cua tung lenh.
+# Dung bien toan cuc (khong phai thread-local) vi cac lenh chay song song bang
+# thread pool -- thread con se khong thay thread-local cua thread cha.
+# An toan vi web chi cho chay mot job tai mot thoi diem.
+_sink = None
+
 
 def say(msg: str = "") -> None:
+    sink = _sink
+    if sink is not None:
+        sink(msg)
+        return
     with _print_lock:
         print(msg, flush=True)
+
+
+@contextmanager
+def capture(fn):
+    """Doi huong moi say() trong khoi nay sang fn."""
+    global _sink
+    previous = _sink
+    _sink = fn
+    try:
+        yield
+    finally:
+        _sink = previous
 
 
 def _now() -> str:
@@ -373,8 +397,8 @@ def cmd_sync(args, cfg: Config) -> int:
 
     rows = report.rows_from_results(results)
     say("")
-    report.print_table(rows)
-    report.print_summary(rows)
+    report.print_table(rows, emit=say)
+    report.print_summary(rows, emit=say)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     outdir = Path(cfg.paths.logdir)
@@ -510,14 +534,24 @@ def cmd_report(args, cfg: Config) -> int:
         return 1
     rows = report.load_run(target)
     say("Lan chay: %s\n" % target.name)
-    report.print_table(rows)
-    report.print_summary(rows)
+    report.print_table(rows, emit=say)
+    report.print_summary(rows, emit=say)
     if args.out:
         out = Path(args.out)
         if out.suffix.lower() == ".html":
             say("\nDa ghi %s" % report.write_html(rows, out))
         else:
             say("\nDa ghi %s" % report.write_csv(rows, out))
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# web
+# --------------------------------------------------------------------------- #
+
+def cmd_web(args, cfg: Config) -> int:
+    from .web import serve
+    serve(cfg, Path(args.users), host=args.host, port=args.port)
     return 0
 
 
@@ -564,6 +598,13 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--sample", type=int, default=200,
                    help="so mail lay mau moi folder (mac dinh 200, 0 = lay het)")
     v.set_defaults(func=cmd_verify)
+
+    w = sub.add_parser("web", help="mo dashboard tren trinh duyet")
+    w.add_argument("--host", default="127.0.0.1",
+                   help="mac dinh 127.0.0.1; chi doi khi that su can, giao dien "
+                        "nay cham vao mat khau")
+    w.add_argument("--port", type=int, default=8765)
+    w.set_defaults(func=cmd_web)
 
     r = sub.add_parser("report", help="xem lai bao cao cua lan chay truoc")
     r.add_argument("--list", action="store_true", help="liet ke cac lan chay da luu")

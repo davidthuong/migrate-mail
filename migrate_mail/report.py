@@ -106,10 +106,11 @@ def _note(row: Row) -> str:
     return str(row.get("ghi_chu") or row.get("exit") or "")
 
 
-def print_table(rows: Sequence[Row]) -> None:
+def print_table(rows: Sequence[Row], emit=print) -> None:
+    """`emit` de goi y dinh huong output (vd sang giao dien web)."""
     header = "  ".join(t.ljust(w) for _k, t, w in _COLUMNS)
-    print(header)
-    print("-" * len(header))
+    emit(header)
+    emit("-" * len(header))
     for row in rows:
         cells = []
         for key, _title, width in _COLUMNS:
@@ -117,30 +118,30 @@ def print_table(rows: Sequence[Row]) -> None:
             if len(val) > width:
                 val = val[: width - 1] + "~"
             cells.append(val.ljust(width))
-        print("  ".join(cells).rstrip())
+        emit("  ".join(cells).rstrip())
 
 
-def print_summary(rows: Sequence[Row]) -> None:
+def print_summary(rows: Sequence[Row], emit=print) -> None:
     ok = [r for r in rows if r.get("ket_qua") == "OK"]
     bad = [r for r in rows if r.get("ket_qua") != "OK"]
     total_msgs = sum(_int(r, "mail_chuyen") for r in rows)
     total_bytes = sum(_int(r, "bytes") for r in rows)
     total_errors = sum(_int(r, "loi") for r in rows)
-    print("")
-    print("Tong ket: %d/%d mailbox OK | %s mail | %s | %d loi le"
+    emit("")
+    emit("Tong ket: %d/%d mailbox OK | %s mail | %s | %d loi le"
           % (len(ok), len(rows), "{:,}".format(total_msgs).replace(",", "."),
              human_bytes(total_bytes), total_errors))
     if bad:
-        print("")
-        print("Mailbox that bai:")
+        emit("")
+        emit("Mailbox that bai:")
         for r in bad:
-            print("  - %s: %s" % (r.get("src_user"),
+            emit("  - %s: %s" % (r.get("src_user"),
                                   r.get("ghi_chu") or r.get("exit") or "khong ro"))
             for tip in (r.get("goi_y") or "").split(" | "):
                 if tip:
-                    print("      -> %s" % _wrap(tip, indent=9))
+                    emit("      -> %s" % _wrap(tip, indent=9))
             if r.get("log"):
-                print("      log: %s" % r["log"])
+                emit("      log: %s" % r["log"])
 
 
 def write_csv(rows: Sequence[Row], path: Path) -> Path:

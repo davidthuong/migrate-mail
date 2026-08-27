@@ -374,6 +374,46 @@ Nguồn: [Gmail bandwidth limits — Google Workspace Admin Help](https://knowle
 
 ---
 
+## Dashboard
+
+Theo dõi 20 mailbox bằng terminal thì khó nhìn. Có giao diện web:
+
+```bash
+python3 mm.py web
+```
+
+Nó in ra một địa chỉ kèm token. Vì giao diện này **chạm vào mật khẩu**, mặc định
+nó chỉ lắng nghe trên `127.0.0.1` — truy cập qua SSH tunnel từ máy bạn:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 root@vps
+```
+
+Rồi mở địa chỉ server in ra. Token chỉ dùng một lần để đặt cookie, sau đó biến
+khỏi thanh địa chỉ.
+
+Trên dashboard:
+
+- Bảng toàn bộ mailbox: kết quả lần chạy gần nhất, số mail, dung lượng, thời gian
+- Chọn vài mailbox bằng checkbox, hoặc để trống để áp dụng cho tất cả
+- Bấm chạy từng bước: kiểm tra đăng nhập → kế hoạch folder → tạo cây folder →
+  chạy khan → chạy thật → đối chiếu ngày
+- Log chạy trực tiếp, tự cuộn theo
+- Form thêm mailbox, ghi thẳng vào `users.csv`
+
+Ba nguyên tắc an toàn của giao diện này:
+
+- **Mật khẩu không bao giờ được gửi ngược về trình duyệt.** API chỉ trả về một cờ
+  cho biết ô đó đã có mật khẩu hay chưa.
+- **Mỗi lúc chỉ một tác vụ.** Bấm nút thứ hai khi đang chạy sẽ bị từ chối, không
+  có chuyện hai lệnh imapsync giẫm lên nhau.
+- **`Chạy thật` hỏi lại trước khi chạy**, các nút còn lại đều không ghi gì.
+
+Mở ra ngoài bằng `--host 0.0.0.0` thì được, nhưng server sẽ cảnh báo — đừng làm
+vậy trừ khi có tường lửa chặn sẵn.
+
+---
+
 ## Báo cáo
 
 Mỗi lần `sync` sinh ra:
@@ -457,7 +497,9 @@ migrate_mail/
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     152 test, không chạm mạng
+  web.py                   dashboard: HTTP server, chạy job
+  web_ui.py                trang HTML của dashboard
+tests/                     181 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 
