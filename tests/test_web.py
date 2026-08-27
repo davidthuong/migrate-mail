@@ -321,3 +321,37 @@ class TestNoteColumn(WebTestCase):
                 time.sleep(0.05)
         box = [m for m in self.state()["mailboxes"] if m["src_user"] == "fail.chi@cu.com"][0]
         self.assertIn("AUTHENTICATION", box["ghi_chu"])
+
+
+class TestConfigReload(WebTestCase):
+    """Sua config.ini phai an o lan chay sau, khong bat nguoi dung restart server."""
+
+    def set_workers(self, n):
+        imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
+        text = CONFIG.format(imapsync=imapsync).replace("workers = 2", "workers = %d" % n)
+        (self.tmp / "config.ini").write_text(text, encoding="utf-8")
+
+    def run_once(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
+            for _ in range(200):
+                job = self.state()["job"]
+                if job and not job["running"]:
+                    return job
+                time.sleep(0.05)
+        self.fail("job khong ket thuc")
+
+    def test_state_exposes_workers(self):
+        self.assertEqual(self.state()["workers"], 2)
+
+    def test_edited_config_takes_effect_on_next_job(self):
+        self.set_workers(7)
+        self.run_once()
+        self.assertEqual(self.state()["workers"], 7)
+
+    def test_broken_config_keeps_the_previous_one(self):
+        (self.tmp / "config.ini").write_text("[sync]\nworkers = khong-phai-so\n",
+                                             encoding="utf-8")
+        job = self.run_once()
+        self.assertIn("khong doc lai duoc config", "\n".join(job["lines"]))
+        self.assertEqual(job["exit_code"], 0)     # van chay duoc bang config cu

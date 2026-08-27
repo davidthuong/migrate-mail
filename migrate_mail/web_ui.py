@@ -244,7 +244,8 @@ async function refresh() {
   }
   $("src").textContent = state.source;
   $("dst").textContent = state.dest;
-  $("meta").textContent = "config: " + state.config;
+  $("meta").textContent = "config: " + state.config +
+    " · song song: " + state.workers + " mailbox";
   $("usersfile").textContent = state.users_file;
   renderRows(); renderScope(); renderJob(); schedule();
 }

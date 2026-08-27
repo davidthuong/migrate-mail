@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from . import __version__, cli, report
-from .config import Config
+from .config import Config, load_config
 from .users import User, load_users
 from .web_ui import PAGE
 
@@ -110,6 +110,13 @@ class JobManager:
 
     def _run(self, job: Job) -> None:
         try:
+            # Doc lai config truoc moi job. Nho vay sua config.ini (vd workers)
+            # la lan chay sau an ngay, khong phai khoi dong lai server.
+            try:
+                self.cfg = load_config(self.cfg.path)
+            except Exception as exc:
+                job.append("Canh bao: khong doc lai duoc config (%s), dung ban cu"
+                           % exc)
             args = _make_args(job.action, job.only, self.users_path)
             fn = _ACTION_FN[job.action]
             with cli.capture(job.append):
@@ -309,6 +316,7 @@ class Handler(BaseHTTPRequestHandler):
                 "dest": "%s:%d" % (self.manager.cfg.dest.host,
                                    self.manager.cfg.dest.port),
                 "config": str(self.manager.cfg.path),
+                "workers": self.manager.cfg.sync.workers,
                 "users_file": str(self.users_path),
                 "actions": ACTIONS,
                 "mailboxes": _mailboxes(self.manager.cfg, self.users_path),
