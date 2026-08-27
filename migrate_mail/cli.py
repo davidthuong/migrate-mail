@@ -160,7 +160,20 @@ def _print_plan(user: User, plan: Plan) -> None:
         say("  GIU NGUYEN:")
         for f in plan.kept:
             say("    - %s" % f.display)
+    _print_unmappable(plan)
     _print_collisions(plan)
+
+
+def _print_unmappable(plan: Plan) -> None:
+    if not plan.unmappable:
+        return
+    say("")
+    say("  !! KHONG DOI TEN DUOC !!")
+    say("  Ten folder co chua dau '=' ma imapsync dung dau do lam dau phan cach")
+    say("  cho --f1f2, nen khong dien ta duoc. Cac folder sau se GIU NGUYEN ten:")
+    for folder, wanted in plan.unmappable:
+        say("    %s  (le ra -> %s)" % (folder.display, wanted))
+    say("  Cach xu ly: doi ten label do ben Gmail cho het dau '=', roi chay lai.")
 
 
 def _print_collisions(plan: Plan) -> None:
@@ -302,6 +315,9 @@ def cmd_sync(args, cfg: Config) -> int:
                 plans[user.src_user] = plan
                 say("  OK   %-32s %d folder chuyen, %d bo qua"
                     % (user.src_user, len(plan.mapped) + len(plan.kept), len(plan.excluded)))
+                for folder, wanted in plan.unmappable:
+                    say("       CANH BAO: '%s' khong doi ten duoc thanh '%s' "
+                        "(ten chua dau '=')" % (folder.display, wanted))
                 for dest, sources in plan.collisions():
                     say("       CANH BAO: %d folder do chung vao '%s': %s"
                         % (len(sources), dest, ", ".join(f.display for f in sources)))

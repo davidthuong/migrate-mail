@@ -84,8 +84,8 @@ class TestBuildCommand(unittest.TestCase):
     def test_folder_mapping_present(self):
         cmd = build()
         maps = [v for k, v in pairs(cmd) if k == "--f1f2"]
-        self.assertIn("[Gmail]/Sent Mail:Sent", maps)
-        self.assertIn("[Gmail]/Spam:Spam", maps)
+        self.assertIn("[Gmail]/Sent Mail=Sent", maps)
+        self.assertIn("[Gmail]/Spam=Spam", maps)
 
     def test_message_id_used_for_identity(self):
         self.assertIn(("--useheader", "Message-Id"), pairs(build()))

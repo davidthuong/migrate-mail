@@ -132,7 +132,7 @@ class TestPlanEnglish(unittest.TestCase):
         args = self.plan.imapsync_args()
         pairs = list(zip(args, args[1:]))
         maps = [v for k, v in pairs if k == "--f1f2"]
-        self.assertIn("[Gmail]/Sent Mail:Sent", maps)
+        self.assertIn("[Gmail]/Sent Mail=Sent", maps)
 
 
 class TestPlanVietnamese(unittest.TestCase):
@@ -164,7 +164,7 @@ class TestPlanVietnamese(unittest.TestCase):
         args = self.plan.imapsync_args()
         pairs = list(zip(args, args[1:]))
         maps = [v for k, v in pairs if k == "--f1f2"]
-        self.assertIn("[Gmail]/Th&AbA- &AREA4w- g&Hu0-i:Sent", maps)
+        self.assertIn("[Gmail]/Th&AbA- &AREA4w- g&Hu0-i=Sent", maps)
 
 
 class TestPlanOptions(unittest.TestCase):
@@ -258,3 +258,51 @@ class TestDestinationCollisions(unittest.TestCase):
                          len(plan.mapped) + len(plan.kept))
         for name in ("INBOX", "Sent", "Trash", "Spam", "Sent Items", "ESET Antispam"):
             self.assertIn(name, dests)
+
+
+class TestF1f2Separator(unittest.TestCase):
+    """imapsync tach --f1f2 bang dau '=' (sub split_around_equal), khong phai ':'.
+
+    Dung sai dau thi imapsync coi ca cum "nguon:dich" la mot ten folder, khong
+    tim thay folder do, va bo qua mapping MA KHONG BAO LOI. Hau qua: folder dac
+    biet cua Gmail giu nguyen ten "[Gmail]/..." ben dich, con Sent/Drafts/Trash
+    that thi rong. Loi nay tung lot qua vi chinh test cung viet theo gia dinh sai.
+    """
+
+    def maps(self, plan):
+        args = plan.imapsync_args()
+        return [v for k, v in zip(args, args[1:]) if k == "--f1f2"]
+
+    def test_uses_equals_not_colon(self):
+        maps = self.maps(build_plan(parse(GMAIL_EN), SyncConf()))
+        self.assertTrue(maps)
+        for m in maps:
+            self.assertIn("=", m)
+        self.assertIn("[Gmail]/Sent Mail=Sent", maps)
+
+    def test_colon_form_never_appears(self):
+        for m in self.maps(build_plan(parse(GMAIL_EN), SyncConf())):
+            self.assertNotIn(":", m)
+
+    def test_split_on_first_equals_recovers_original_pair(self):
+        """Mo phong dung cach imapsync doc: split(/=/, chuoi, 2)."""
+        plan = build_plan(parse(GMAIL_VI), SyncConf())
+        wanted = {f.raw: d for f, d in plan.mapped}
+        for m in self.maps(plan):
+            src, dest = m.split("=", 1)
+            self.assertIn(src, wanted)
+            self.assertEqual(wanted[src], dest)
+
+    def test_source_name_containing_equals_is_reported_not_silently_broken(self):
+        folders = parse([
+            imap_line("HasNoChildren", "INBOX"),
+            imap_line("HasNoChildren Sent", "[Gmail]/a=b"),
+        ])
+        plan = build_plan(folders, SyncConf())
+        self.assertEqual([f.raw for f, _ in plan.unmappable], ["[Gmail]/a=b"])
+        self.assertIn("[Gmail]/a=b", [f.raw for f in plan.kept])
+        self.assertEqual(self.maps(plan), [])
+
+    def test_normal_names_are_not_reported_as_unmappable(self):
+        self.assertEqual(build_plan(parse(GMAIL_EN), SyncConf()).unmappable, [])
+        self.assertEqual(build_plan(parse(GMAIL_VI), SyncConf()).unmappable, [])

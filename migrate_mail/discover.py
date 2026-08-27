@@ -54,13 +54,19 @@ class Plan:
     excluded: List[Tuple[Folder, str]] = field(default_factory=list)   # (folder, ly do)
     mapped: List[Tuple[Folder, str]] = field(default_factory=list)     # (folder, ten dich)
     kept: List[Folder] = field(default_factory=list)                   # giu nguyen ten
+    # Folder le ra phai doi ten nhung ten nguon co chua dau '=' -- xem
+    # imapsync_args() de biet vi sao khong dien ta duoc.
+    unmappable: List[Tuple[Folder, str]] = field(default_factory=list)
 
     def imapsync_args(self) -> List[str]:
         args: List[str] = []
         for folder, _reason in self.excluded:
             args += ["--exclude", "^%s$" % re.escape(folder.raw)]
         for folder, dest in self.mapped:
-            args += ["--f1f2", "%s:%s" % (folder.raw, dest)]
+            # imapsync tach chuoi nay bang dau '=' (sub split_around_equal),
+            # KHONG phai dau ':'. Dung sai dau thi imapsync coi ca cum la mot
+            # ten folder, mapping im lang khong co tac dung nao.
+            args += ["--f1f2", "%s=%s" % (folder.raw, dest)]
         return args
 
     def destinations(self) -> "OrderedDict":
@@ -239,7 +245,14 @@ def build_plan(folders: List[Folder], sync: SyncConf) -> Plan:
         if hit:
             dest = map_by_flag[hit]
             if dest and dest != f.raw:
-                plan.mapped.append((f, dest))
+                if "=" in f.raw:
+                    # --f1f2 dung '=' lam dau phan cach nen khong co cach nao
+                    # dien ta ten nguon co chua '='. Bao ra thay vi sinh mot
+                    # mapping hong ma khong ai biet.
+                    plan.unmappable.append((f, dest))
+                    plan.kept.append(f)
+                else:
+                    plan.mapped.append((f, dest))
             else:
                 plan.kept.append(f)
             continue
