@@ -422,9 +422,14 @@ def cmd_sync(args, cfg: Config) -> int:
 
 
 def _print_sizes(results: List[Result]) -> None:
-    """Bao cao dung luong, kem uoc luong so ngay theo gioi han cua Gmail."""
-    header = "%-34s %10s %12s %10s %6s" % ("Mailbox", "Mail", "Dung luong",
-                                           "Mail lon nhat", "Ngay")
+    """Bao cao dung luong, kem tran tren so ngay theo gioi han Gmail cong bo.
+
+    Cot "Ngay toi da" la kich ban XAU NHAT, khong phai du bao. Do thuc te cho
+    thay co account Workspace tai lien mach vuot xa 2500 MB ma khong bi chan,
+    nen thuong xong som hon nhieu. Xem ghi chu in kem ben duoi bang.
+    """
+    header = "%-34s %10s %12s %10s %10s" % ("Mailbox", "Mail", "Dung luong",
+                                            "Mail lon nhat", "Ngay toi da")
     say(header)
     say("-" * len(header))
     total_bytes = total_msgs = 0
@@ -439,7 +444,7 @@ def _print_sizes(results: List[Result]) -> None:
         total_bytes += size
         total_msgs += msgs
         max_days = max(max_days, days)
-        say("%-34s %10s %12s %10s %6s"
+        say("%-34s %10s %12s %10s %10s"
             % (r.user.src_user, "{:,}".format(msgs).replace(",", "."),
                report.human_bytes(size), report.human_bytes(r.get("source_biggest")),
                days))
@@ -449,15 +454,20 @@ def _print_sizes(results: List[Result]) -> None:
     say("")
     # Google cong bo con so nay la "2500 MB", viet y nguyen de doi chieu duoc
     # voi tai lieu cua ho thay vi quy ra GiB.
-    say("Gmail chi cho tai ve 2500 MB moi ngay cho MOI account.")
-    say("Gioi han tinh rieng tung account, nen chay nhieu mailbox song song")
-    say("KHONG bi cong don -- tong thoi gian la cua hop thu lau nhat, khong")
-    say("phai tong cua tat ca.")
+    say("Cot 'Ngay toi da' tinh theo gioi han Google cong bo: 2500 MB tai ve")
+    say("moi ngay cho MOI account. Gioi han tinh rieng tung account nen chay")
+    say("nhieu mailbox song song KHONG bi cong don.")
+    say("")
+    say("Day la TRAN TREN, khong phai du bao. Thuc te da gap account Workspace")
+    say("tai lien mach vuot xa muc do ma khong bi chan, xong som hon nhieu.")
+    say("Muon biet con bao lau that su thi xem toc do trong log luc dang chay:")
+    say("  tail -1 logs/<mailbox>.sync.*.log")
+    say("dong do co san so mail/s va tong da chep.")
     if max_days > 1:
         say("")
-        say("Hop thu lon nhat can khoang %d ngay. Moi ngay chay lai dung lenh sync:" % max_days)
-        say("  mail da chuyen se khong bi chep lai, no chi lam tiep phan con thieu.")
-        say("Nen bat dau som hon ngay cutover it nhat %d ngay." % (max_days + 1))
+        say("Neu dung phai gioi han, hop thu lon nhat can toi da %d ngay." % max_days)
+        say("Moi ngay chay lai dung lenh sync: mail da chuyen khong bi chep lai,")
+        say("no chi lam tiep phan con thieu.")
 
 
 def _days_needed(size_bytes: int) -> int:

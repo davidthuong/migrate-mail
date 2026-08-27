@@ -134,19 +134,31 @@ python3 mm.py verify    --only $U         # 9. kiểm chứng ngày tháng
 nghĩa. Tạo cây folder trước (nhanh, không đụng mail nào) thì bước 6 mới ra ước
 lượng đầy đủ. Đây cũng là cách chính imapsync gợi ý trong log.
 
-**Bước 5 trả lời câu hỏi lịch chạy.** `--sizes` chạy `--justfoldersizes` của
-imapsync: nó đọc kích thước từ metadata IMAP chứ không tải thân mail, nên tốn rất
-ít băng thông. Kết quả gồm tổng dung lượng, mail lớn nhất, và **số ngày cần chạy**
-tính theo hạn mức 2500 MB/ngày của Gmail:
+**Bước 5 cho biết khối lượng.** `--sizes` chạy `--justfoldersizes` của imapsync:
+nó đọc kích thước từ metadata IMAP chứ không tải thân mail, nên tốn rất ít băng
+thông. Kết quả gồm tổng dung lượng, mail lớn nhất, và trần trên số ngày:
 
 ```
-Mailbox                                  Mail   Dung luong  Mail lon nhat   Ngay
---------------------------------------------------------------------------------
-nhi.tran@namphonggroup.com             49.720       5.0 GB        25.0 MB      3
+Mailbox                                  Mail   Dung luong  Mail lon nhat  Ngay toi da
+--------------------------------------------------------------------------------------
+nhi.tran@namphonggroup.com             49.751      22.8 GB        40.7 MB           10
 ```
 
-Chạy bước này cho **cả 20 mailbox** ngay từ đầu để biết tổng khối lượng và lên
-lịch, trước khi động vào cái nào.
+Chạy bước này cho **toàn bộ mailbox** ngay từ đầu để biết tổng khối lượng và
+kiểm tra cột *Mail lớn nhất* có vượt giới hạn của IceWarp không.
+
+> **Cột "Ngày tối đa" là trần trên, không phải dự báo.** Nó tính theo hạn mức
+> 2500 MB/ngày Google công bố. Thực tế đã gặp account Workspace tải liền mạch
+> **hơn 10 GB** mà không bị chặn — hộp 22,8 GB ở trên chạy xong trong khoảng một
+> ngày chứ không phải 10 ngày. Muốn biết còn bao lâu thật sự thì xem tốc độ
+> trong log lúc đang chạy:
+>
+> ```bash
+> tail -1 logs/<mailbox>.sync.*.log
+> ```
+>
+> Dòng đó có sẵn số mail/s và tổng đã chép. Lấy dung lượng còn lại chia cho tốc
+> độ là ra.
 
 Sau bước 6, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
 với kế hoạch ở bước 3 xem tên có đúng không, trước khi đụng vào mail thật.
