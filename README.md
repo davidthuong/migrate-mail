@@ -122,10 +122,19 @@ python3 mm.py doctor                      # 1. môi trường
 python3 mm.py preflight --only $U         # 2. đăng nhập được cả hai đầu
 python3 mm.py discover  --only $U         # 3. folder Gmail + kế hoạch chuyển
 python3 mm.py discover  --dest --only $U  # 4. folder thật bên IceWarp
-python3 mm.py sync --dry --only $U        # 5. chạy khan, không ghi gì
-python3 mm.py sync      --only $U         # 6. chạy thật
-python3 mm.py verify    --only $U         # 7. kiểm chứng ngày tháng
+python3 mm.py sync --folders-only --only $U   # 5. tạo cây folder, chưa chuyển mail
+python3 mm.py sync --dry --only $U        # 6. chạy khan, không ghi gì
+python3 mm.py sync      --only $U         # 7. chạy thật
+python3 mm.py verify    --only $U         # 8. kiểm chứng ngày tháng
 ```
+
+**Vì sao có bước 5.** imapsync không mô phỏng được một folder chưa tồn tại bên
+đích, nên chạy khan trên tài khoản trắng sẽ bỏ qua gần hết và cho số liệu vô
+nghĩa. Tạo cây folder trước (nhanh, không đụng mail nào) thì bước 6 mới ra ước
+lượng đầy đủ. Đây cũng là cách chính imapsync gợi ý trong log.
+
+Sau bước 5, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
+với kế hoạch ở bước 3 xem tên có đúng không, trước khi đụng vào mail thật.
 
 **Bước 4 là bước dễ bỏ sót nhất.** Nó liệt kê folder có sẵn trên IceWarp và cảnh
 báo nếu tên trong `config.ini` không khớp:
@@ -448,7 +457,7 @@ migrate_mail/
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
   cli.py                   các lệnh con
-tests/                     138 test, không chạm mạng
+tests/                     152 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 

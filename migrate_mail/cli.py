@@ -16,7 +16,7 @@ from .config import Config, load_config
 from .discover import (NOSELECT, SPECIAL_DRAFTS, SPECIAL_JUNK, SPECIAL_SENT,
                        SPECIAL_TRASH, DiscoveryError, Plan, build_plan,
                        check_login, list_folders, open_connection)
-from .runner import (MODE_DRY, MODE_SYNC, Result, flags_used, imapsync_available,
+from .runner import (MODE_DRY, MODE_FOLDERS, MODE_SYNC, Result, flags_used, imapsync_available,
                      imapsync_run, run_user, unsupported_flags, user_statedir)
 from .users import User, filter_users, load_users
 
@@ -276,7 +276,12 @@ def _done_marker(cfg: Config, user: User) -> Path:
 
 def cmd_sync(args, cfg: Config) -> int:
     users = filter_users(load_users(args.users), args.only)
-    mode = MODE_DRY if args.dry else MODE_SYNC
+    if args.folders_only:
+        mode = MODE_FOLDERS
+    elif args.dry:
+        mode = MODE_DRY
+    else:
+        mode = MODE_SYNC
 
     if args.resume:
         remaining = [u for u in users if not _done_marker(cfg, u).exists()]
@@ -296,6 +301,8 @@ def cmd_sync(args, cfg: Config) -> int:
     say("Log     : %s" % cfg.paths.logdir)
     if mode == MODE_DRY:
         say("Day la chay thu, khong mail nao duoc ghi vao IceWarp.")
+    elif mode == MODE_FOLDERS:
+        say("Chi tao cay folder ben IceWarp, khong chuyen mail nao.")
     say("")
 
     # Buoc 1: do folder. Neu khong do duoc thi KHONG chay mailbox do -- chay mu
@@ -542,6 +549,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("sync", help="chay migration")
     s.add_argument("--only", default="")
     s.add_argument("--dry", action="store_true", help="chay thu, khong ghi gi vao IceWarp")
+    s.add_argument("--folders-only", action="store_true",
+                   help="chi tao cay folder ben IceWarp, khong chuyen mail; "
+                        "chay truoc --dry de lan chay khan cho so lieu day du")
     s.add_argument("--workers", type=int, default=0, help="ghi de [sync] workers")
     s.add_argument("--since-days", type=int, default=0,
                    help="chi chuyen mail moi hon N ngay (dung cho vong delta luc cutover)")

@@ -303,3 +303,36 @@ class TestUnsupportedFlags(unittest.TestCase):
         big = GETOPTIONS_SNIPPET + "".join(
             "        'opt%d!' => \$m->{ x },\n" % i for i in range(60))
         self.assertEqual(self.check(big, ["--nofoldersizes", "--nolog"]), [])
+
+
+class TestFoldersOnlyMode(unittest.TestCase):
+    """--folders-only tao that cay folder, khong dong bo mail.
+
+    Khong duoc kem --dry: imapsync khong mo phong duoc folder chua ton tai ben
+    dich, nen phai tao that thi lan chay khan sau moi ra so lieu day du.
+    """
+
+    def build_folders(self):
+        from migrate_mail.runner import MODE_FOLDERS
+        return build(mode=MODE_FOLDERS)
+
+    def test_uses_justfolders(self):
+        self.assertIn("--justfolders", self.build_folders())
+
+    def test_is_not_a_dry_run(self):
+        self.assertNotIn("--dry", self.build_folders())
+
+    def test_dry_mode_has_no_justfolders(self):
+        cmd = build(mode=MODE_DRY)
+        self.assertIn("--dry", cmd)
+        self.assertNotIn("--justfolders", cmd)
+
+    def test_sync_mode_has_neither(self):
+        cmd = build(mode=MODE_SYNC)
+        self.assertNotIn("--dry", cmd)
+        self.assertNotIn("--justfolders", cmd)
+
+    def test_folder_mapping_still_applied(self):
+        # Tao folder ma khong ap mapping thi se tao nham ten [Gmail]/...
+        maps = [v for k, v in pairs(self.build_folders()) if k == "--f1f2"]
+        self.assertIn("[Gmail]/Sent Mail=Sent", maps)

@@ -148,7 +148,10 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
     if mode == MODE_DRY:
         cmd += ["--dry"]
     elif mode == MODE_FOLDERS:
-        cmd += ["--dry", "--justfolders"]
+        # CO tao folder that, chi khong dong bo mail. Khong dung --dry o day:
+        # imapsync khong mo phong duoc mot folder chua ton tai ben dich, nen
+        # phai tao truoc thi lan chay khan sau moi cho ra so lieu day du.
+        cmd += ["--justfolders"]
 
     cmd += sync.extra_args
     return cmd

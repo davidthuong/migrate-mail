@@ -338,3 +338,32 @@ class TestDiscoverDest(CliTestCase):
             code, out = self.run_cli("discover", "--dest", "--only", "an@cu.com")
         self.assertEqual(code, 1)
         self.assertIn("Authentication failed", out)
+
+
+class TestFoldersOnly(CliTestCase):
+    def run_it(self, *args):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            return self.run_cli("sync", "--only", "an@cu.com", *args)
+
+    def test_folders_only_passes_justfolders_without_dry(self):
+        code, out = self.run_it("--folders-only")
+        self.assertEqual(code, 0, out)
+        flat = self.recorded_argv()[0]
+        self.assertIn("--justfolders", flat)
+        self.assertNotIn("--dry", flat)
+
+    def test_announces_what_it_will_do(self):
+        _code, out = self.run_it("--folders-only")
+        self.assertIn("Chi tao cay folder", out)
+
+    def test_folders_only_does_not_mark_mailbox_done(self):
+        """Tao folder xong khong phai la da migrate -- --resume khong duoc bo qua."""
+        self.run_it("--folders-only")
+        self.argv_log.unlink()
+        code, out = self.run_it("--resume")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(self.recorded_argv()), 1)
+
+    def test_log_file_is_named_by_mode(self):
+        self.run_it("--folders-only")
+        self.assertTrue(list((self.tmp / "logs").glob("*.folders.*.log")))
