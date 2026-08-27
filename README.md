@@ -122,18 +122,33 @@ python3 mm.py doctor                      # 1. môi trường
 python3 mm.py preflight --only $U         # 2. đăng nhập được cả hai đầu
 python3 mm.py discover  --only $U         # 3. folder Gmail + kế hoạch chuyển
 python3 mm.py discover  --dest --only $U  # 4. folder thật bên IceWarp
-python3 mm.py sync --folders-only --only $U   # 5. tạo cây folder, chưa chuyển mail
-python3 mm.py sync --dry --only $U        # 6. chạy khan, không ghi gì
-python3 mm.py sync      --only $U         # 7. chạy thật
-python3 mm.py verify    --only $U         # 8. kiểm chứng ngày tháng
+python3 mm.py sync --sizes --only $U       # 5. đo dung lượng, ước lượng số ngày
+python3 mm.py sync --folders-only --only $U   # 6. tạo cây folder, chưa chuyển mail
+python3 mm.py sync --dry --only $U        # 7. chạy khan, không ghi gì
+python3 mm.py sync      --only $U         # 8. chạy thật
+python3 mm.py verify    --only $U         # 9. kiểm chứng ngày tháng
 ```
 
-**Vì sao có bước 5.** imapsync không mô phỏng được một folder chưa tồn tại bên
+**Vì sao có bước 6.** imapsync không mô phỏng được một folder chưa tồn tại bên
 đích, nên chạy khan trên tài khoản trắng sẽ bỏ qua gần hết và cho số liệu vô
 nghĩa. Tạo cây folder trước (nhanh, không đụng mail nào) thì bước 6 mới ra ước
 lượng đầy đủ. Đây cũng là cách chính imapsync gợi ý trong log.
 
-Sau bước 5, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
+**Bước 5 trả lời câu hỏi lịch chạy.** `--sizes` chạy `--justfoldersizes` của
+imapsync: nó đọc kích thước từ metadata IMAP chứ không tải thân mail, nên tốn rất
+ít băng thông. Kết quả gồm tổng dung lượng, mail lớn nhất, và **số ngày cần chạy**
+tính theo hạn mức 2500 MB/ngày của Gmail:
+
+```
+Mailbox                                  Mail   Dung luong  Mail lon nhat   Ngay
+--------------------------------------------------------------------------------
+nhi.tran@namphonggroup.com             49.720       5.0 GB        25.0 MB      3
+```
+
+Chạy bước này cho **cả 20 mailbox** ngay từ đầu để biết tổng khối lượng và lên
+lịch, trước khi động vào cái nào.
+
+Sau bước 6, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
 với kế hoạch ở bước 3 xem tên có đúng không, trước khi đụng vào mail thật.
 
 **Bước 4 là bước dễ bỏ sót nhất.** Nó liệt kê folder có sẵn trên IceWarp và cảnh
@@ -499,7 +514,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     181 test, không chạm mạng
+tests/                     195 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 

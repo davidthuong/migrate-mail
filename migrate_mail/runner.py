@@ -30,6 +30,10 @@ from .users import User
 MODE_SYNC = "sync"
 MODE_DRY = "dry"
 MODE_FOLDERS = "folders"
+MODE_SIZES = "sizes"
+
+# Gioi han Gmail: 2500 MB tai ve moi ngay cho moi account.
+GMAIL_DAILY_LIMIT = 2500 * 1024 * 1024
 
 # Cac dong thong ke o cuoi output imapsync
 _STAT_PATTERNS = {
@@ -40,6 +44,11 @@ _STAT_PATTERNS = {
     "bytes_skipped": r"Total bytes skipped\s*:\s*(\d+)",
     "biggest_message": r"Biggest message\s*:\s*(\d+)",
     "errors": r"Detected\s+(\d+)\s+errors?",
+    # Chi co trong che do --justfoldersizes
+    "source_messages": r"Host1 Nb messages\s*:\s*(\d+)",
+    "source_bytes": r"Host1 Total size\s*:\s*(\d+)",
+    "source_biggest": r"Host1 Biggest message\s*:\s*(\d+)",
+    "source_folders": r"Host1 Nb folders\s*:\s*(\d+)",
 }
 _TIME_RE = re.compile(r"Transfer time\s*:\s*([\d.]+)\s*sec")
 _FOLDERS_RE = re.compile(r"Folders synced\s*:\s*(\d+)\s*/\s*(\d+)")
@@ -139,7 +148,8 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
 
     cmd += ["--timeout", str(sync.timeout)]
     cmd += ["--errorsmax", str(sync.errorsmax)]
-    cmd += ["--nofoldersizes"]        # bo buoc dem dung luong dau vao cho nhanh
+    if mode != MODE_SIZES:
+        cmd += ["--nofoldersizes"]    # bo buoc dem dung luong dau vao cho nhanh
     cmd += ["--noreleasecheck"]       # khong goi ra internet kiem tra ban moi
     cmd += ["--nolog"]                # ta tu giu log, khong dung LOG_imapsync/
     cmd += ["--tmpdir", str(statedir)]
@@ -147,6 +157,10 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
 
     if mode == MODE_DRY:
         cmd += ["--dry"]
+    elif mode == MODE_SIZES:
+        # Dem dung luong roi thoat. Dung RFC822.SIZE chu khong tai than mail,
+        # nen ton rat it bang thong so voi mot lan sync.
+        cmd += ["--justfoldersizes"]
     elif mode == MODE_FOLDERS:
         # CO tao folder that, chi khong dong bo mail. Khong dung --dry o day:
         # imapsync khong mo phong duoc mot folder chua ton tai ben dich, nen
@@ -349,5 +363,6 @@ def flags_used(cfg: Config) -> List[str]:
         "--skipcrossduplicates", "--nousecache", "--maxsize", "--maxbytespersecond",
         "--maxage", "--timeout", "--errorsmax", "--nofoldersizes", "--noreleasecheck",
         "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders",
+        "--justfoldersizes",
         "--syncinternaldates", "--idatefromheader",
     ]

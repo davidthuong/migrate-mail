@@ -336,3 +336,77 @@ class TestFoldersOnlyMode(unittest.TestCase):
         # Tao folder ma khong ap mapping thi se tao nham ten [Gmail]/...
         maps = [v for k, v in pairs(self.build_folders()) if k == "--f1f2"]
         self.assertIn("[Gmail]/Sent Mail=Sent", maps)
+
+
+SIZES_OUTPUT = """
+Host1 Nb folders:                    11 folders
+Host2 Nb folders:                    10 folders
+
+Host1 Nb messages:                49720 messages
+Host2 Nb messages:                    0 messages
+
+Host1 Total size:            5368709120 bytes (5.000 GiB)
+Host2 Total size:                     0 bytes (0.000 KiB)
+
+Host1 Biggest message:         26214400 bytes (25.000 MiB)
+Exiting with return value 0 (EX_OK: successful termination)
+"""
+
+
+class TestSizesMode(unittest.TestCase):
+    def build_sizes(self):
+        from migrate_mail.runner import MODE_SIZES
+        return build(mode=MODE_SIZES)
+
+    def test_asks_imapsync_for_folder_sizes(self):
+        self.assertIn("--justfoldersizes", self.build_sizes())
+
+    def test_does_not_suppress_folder_sizes(self):
+        """--nofoldersizes se vo hieu hoa chinh thu ta dang muon do."""
+        self.assertNotIn("--nofoldersizes", self.build_sizes())
+
+    def test_other_modes_still_suppress_folder_sizes(self):
+        for mode in (MODE_SYNC, MODE_DRY):
+            self.assertIn("--nofoldersizes", build(mode=mode))
+
+    def test_is_not_a_dry_run(self):
+        # --justfoldersizes tu thoat sau khi dem, khong can --dry
+        self.assertNotIn("--dry", self.build_sizes())
+
+    def test_parses_source_totals(self):
+        stats = parse_output(SIZES_OUTPUT)["stats"]
+        self.assertEqual(stats["source_messages"], 49720)
+        self.assertEqual(stats["source_bytes"], 5368709120)
+        self.assertEqual(stats["source_biggest"], 26214400)
+        self.assertEqual(stats["source_folders"], 11)
+
+    def test_does_not_confuse_host2_numbers_with_host1(self):
+        stats = parse_output(SIZES_OUTPUT)["stats"]
+        self.assertNotEqual(stats["source_bytes"], 0)
+
+
+class TestDaysNeeded(unittest.TestCase):
+    """Gioi han Gmail 2500 MB/ngay/account quyet dinh lich chay."""
+
+    def days(self, n):
+        from migrate_mail.cli import _days_needed
+        return _days_needed(n)
+
+    def test_empty_mailbox(self):
+        self.assertEqual(self.days(0), 0)
+
+    def test_exactly_at_the_limit_is_one_day(self):
+        from migrate_mail.runner import GMAIL_DAILY_LIMIT
+        self.assertEqual(self.days(GMAIL_DAILY_LIMIT), 1)
+
+    def test_one_byte_over_needs_two_days(self):
+        from migrate_mail.runner import GMAIL_DAILY_LIMIT
+        self.assertEqual(self.days(GMAIL_DAILY_LIMIT + 1), 2)
+
+    def test_five_gigabytes(self):
+        self.assertEqual(self.days(5 * 1024 ** 3), 3)
+
+    def test_rounds_up_never_down(self):
+        from migrate_mail.runner import GMAIL_DAILY_LIMIT
+        for n in (1, 100, GMAIL_DAILY_LIMIT - 1):
+            self.assertEqual(self.days(n), 1)

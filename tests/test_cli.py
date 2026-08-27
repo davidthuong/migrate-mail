@@ -367,3 +367,23 @@ class TestFoldersOnly(CliTestCase):
     def test_log_file_is_named_by_mode(self):
         self.run_it("--folders-only")
         self.assertTrue(list((self.tmp / "logs").glob("*.folders.*.log")))
+
+
+class TestSizesCommand(CliTestCase):
+    def test_sizes_action_reaches_imapsync(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            code, out = self.run_cli("sync", "--sizes", "--only", "an@cu.com")
+        self.assertEqual(code, 0, out)
+        flat = self.recorded_argv()[0]
+        self.assertIn("--justfoldersizes", flat)
+        self.assertNotIn("--nofoldersizes", flat)
+
+    def test_announces_it_will_not_move_mail(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            _code, out = self.run_cli("sync", "--sizes", "--only", "an@cu.com")
+        self.assertIn("Chi dem dung luong", out)
+
+    def test_sizes_does_not_mark_mailbox_done(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync", "--sizes", "--only", "an@cu.com")
+        self.assertFalse((self.tmp / "state" / "an@cu.com" / "done.marker").exists())

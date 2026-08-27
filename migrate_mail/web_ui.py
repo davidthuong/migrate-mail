@@ -95,6 +95,7 @@ PAGE = r"""<!doctype html>
       <button data-act="preflight">Kiểm tra đăng nhập</button>
       <button data-act="discover">Kế hoạch folder</button>
       <button data-act="dest">Folder bên IceWarp</button>
+      <button data-act="sizes">Đo dung lượng</button>
       <span class="sep"></span>
       <button data-act="folders">Tạo cây folder</button>
       <button data-act="dry">Chạy khan</button>

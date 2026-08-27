@@ -17,7 +17,8 @@ from .config import Config, load_config
 from .discover import (NOSELECT, SPECIAL_DRAFTS, SPECIAL_JUNK, SPECIAL_SENT,
                        SPECIAL_TRASH, DiscoveryError, Plan, build_plan,
                        check_login, list_folders, open_connection)
-from .runner import (MODE_DRY, MODE_FOLDERS, MODE_SYNC, Result, flags_used, imapsync_available,
+from .runner import (GMAIL_DAILY_LIMIT, MODE_DRY, MODE_FOLDERS,
+                     MODE_SIZES, MODE_SYNC, Result, flags_used, imapsync_available,
                      imapsync_run, run_user, unsupported_flags, user_statedir)
 from .users import User, filter_users, load_users
 
@@ -300,7 +301,9 @@ def _done_marker(cfg: Config, user: User) -> Path:
 
 def cmd_sync(args, cfg: Config) -> int:
     users = filter_users(load_users(args.users), args.only)
-    if args.folders_only:
+    if args.sizes:
+        mode = MODE_SIZES
+    elif args.folders_only:
         mode = MODE_FOLDERS
     elif args.dry:
         mode = MODE_DRY
@@ -327,6 +330,8 @@ def cmd_sync(args, cfg: Config) -> int:
         say("Day la chay thu, khong mail nao duoc ghi vao IceWarp.")
     elif mode == MODE_FOLDERS:
         say("Chi tao cay folder ben IceWarp, khong chuyen mail nao.")
+    elif mode == MODE_SIZES:
+        say("Chi dem dung luong ben Gmail, khong chuyen mail nao.")
     say("")
 
     # Buoc 1: do folder. Neu khong do duoc thi KHONG chay mailbox do -- chay mu
@@ -397,8 +402,11 @@ def cmd_sync(args, cfg: Config) -> int:
 
     rows = report.rows_from_results(results)
     say("")
-    report.print_table(rows, emit=say)
-    report.print_summary(rows, emit=say)
+    if mode == MODE_SIZES:
+        _print_sizes(results)
+    else:
+        report.print_table(rows, emit=say)
+        report.print_summary(rows, emit=say)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     outdir = Path(cfg.paths.logdir)
@@ -411,6 +419,48 @@ def cmd_sync(args, cfg: Config) -> int:
     say("         %s" % json_path)
 
     return 0 if all(r.ok for r in results) else 1
+
+
+def _print_sizes(results: List[Result]) -> None:
+    """Bao cao dung luong, kem uoc luong so ngay theo gioi han cua Gmail."""
+    header = "%-34s %10s %12s %10s %6s" % ("Mailbox", "Mail", "Dung luong",
+                                           "Mail lon nhat", "Ngay")
+    say(header)
+    say("-" * len(header))
+    total_bytes = total_msgs = 0
+    max_days = 0
+    for r in results:
+        if not r.ok:
+            say("%-34s  %s" % (r.user.src_user, r.error or r.exit_label or "loi"))
+            continue
+        size = r.get("source_bytes")
+        msgs = r.get("source_messages")
+        days = _days_needed(size)
+        total_bytes += size
+        total_msgs += msgs
+        max_days = max(max_days, days)
+        say("%-34s %10s %12s %10s %6s"
+            % (r.user.src_user, "{:,}".format(msgs).replace(",", "."),
+               report.human_bytes(size), report.human_bytes(r.get("source_biggest")),
+               days))
+    say("")
+    say("Tong: %s mail, %s."
+        % ("{:,}".format(total_msgs).replace(",", "."), report.human_bytes(total_bytes)))
+    say("")
+    say("Gmail chi cho tai ve %s moi ngay cho MOI account, va gioi han nay tinh"
+        % report.human_bytes(GMAIL_DAILY_LIMIT))
+    say("rieng tung account nen chay song song khong bi cong don.")
+    if max_days > 1:
+        say("")
+        say("Hop thu lon nhat can khoang %d ngay. Moi ngay chay lai dung lenh sync:" % max_days)
+        say("  mail da chuyen se khong bi chep lai, no chi lam tiep phan con thieu.")
+        say("Nen bat dau som hon ngay cutover it nhat %d ngay." % (max_days + 1))
+
+
+def _days_needed(size_bytes: int) -> int:
+    if size_bytes <= 0:
+        return 0
+    return -(-size_bytes // GMAIL_DAILY_LIMIT)      # lam tron len
 
 
 # --------------------------------------------------------------------------- #
@@ -583,6 +633,8 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("sync", help="chay migration")
     s.add_argument("--only", default="")
     s.add_argument("--dry", action="store_true", help="chay thu, khong ghi gi vao IceWarp")
+    s.add_argument("--sizes", action="store_true",
+                   help="chi dem dung luong ben Gmail va uoc luong so ngay can chay")
     s.add_argument("--folders-only", action="store_true",
                    help="chi tao cay folder ben IceWarp, khong chuyen mail; "
                         "chay truoc --dry de lan chay khan cho so lieu day du")

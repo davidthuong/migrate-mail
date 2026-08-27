@@ -39,6 +39,7 @@ ACTIONS = {
     "preflight": "Kiem tra dang nhap",
     "discover": "Xem ke hoach folder",
     "dest": "Xem folder ben IceWarp",
+    "sizes": "Do dung luong",
     "folders": "Tao cay folder",
     "dry": "Chay khan",
     "sync": "Chay that",
@@ -130,6 +131,7 @@ class _Args:
         self.users = ""
         self.dry = False
         self.folders_only = False
+        self.sizes = False
         self.workers = 0
         self.since_days = 0
         self.resume = False
@@ -147,6 +149,8 @@ def _make_args(action: str, only: List[str], users_path: Path) -> _Args:
         args.dry = True
     elif action == "folders":
         args.folders_only = True
+    elif action == "sizes":
+        args.sizes = True
     elif action == "dest":
         args.dest = True
     return args
@@ -157,6 +161,7 @@ _ACTION_FN: Dict[str, Callable] = {
     "discover": lambda a, c: cli.cmd_discover(a, c),
     "dest": lambda a, c: cli.cmd_discover(a, c),
     "folders": lambda a, c: cli.cmd_sync(a, c),
+    "sizes": lambda a, c: cli.cmd_sync(a, c),
     "dry": lambda a, c: cli.cmd_sync(a, c),
     "sync": lambda a, c: cli.cmd_sync(a, c),
     "verify": lambda a, c: cli.cmd_verify(a, c),
