@@ -58,6 +58,87 @@ class TestDiagnose(unittest.TestCase):
         self.assertEqual(diagnose("Transfer ended. Detected 0 errors"), [])
         self.assertEqual(diagnose(""), [])
 
+    # --- Nhung dong vo hai co san trong MOI log imapsync -------------------
+    # Ba luat duoi day tung bat trung chung, lam bao cao bao viec can lam
+    # hoan toan sai (di tang quota IceWarp, di tang timeout) cho mailbox
+    # that bai vi ly do khac han.
+
+    def test_stats_block_is_not_a_bandwidth_limit(self):
+        """'Average bandwidth rate' nam trong khoi thong ke cua moi log."""
+        self.assertEqual(
+            diagnose("Average bandwidth rate                  : 328.8 KiB/s"), [])
+
+    def test_imapsync_banner_is_not_a_timeout(self):
+        """imapsync in thong so cua chinh no, va echo lai ca dong lenh."""
+        text = ("/usr/local/bin/imapsync --host1 imap.gmail.com --timeout 300\n"
+                "Host1: imap connection timeout is 300 seconds\n"
+                "Host2: imap connection timeout is 300 seconds\n")
+        self.assertEqual(diagnose(text), [])
+
+    def test_gmail_overquota_is_not_blamed_on_icewarp(self):
+        """[OVERQUOTA] luc FETCH la han muc Gmail, khong phai hop dich day."""
+        text = ("Err 2/2: - msg [Gmail]/Sent/17821 could not be fetched: "
+                "* BYE [OVERQUOTA] Account exceeded command or bandwidth limits.\n")
+        tips = diagnose(text)
+        self.assertTrue(any("2500 MB" in t for t in tips), tips)
+        self.assertFalse(any("IceWarp da day" in t for t in tips),
+                         "do loi cho IceWarp trong khi Gmail moi la ben chan: %s" % tips)
+
+    def test_unfetchable_message_is_not_reported_as_throttling(self):
+        """Log that cua mot hop DA XONG, chi thieu 1 mail Gmail khong tra ra.
+
+        Khong bi chan, khong reconnect -- nhung imapsync van thoat 115. Bao cao
+        phai noi ve mail hong, khong duoc do cho han muc bang thong.
+        """
+        text = (
+            "Average bandwidth rate                  : 202.2 KiB/s\n"
+            "Reconnections to host1                  : 0\n"
+            "The sync is not finished, there are 1 among 16749 identified "
+            "messages in host1 that are not on host2.\n"
+            "Detected 1 errors\n"
+            "Err 1/1: - msg INBOX/16947 {0} S[22184] F[\\Seen] "
+            "I[30-Dec-2025 01:56:35 +0000] could not be fetched:\n"
+            "The most frequent error is ERR_Host1_FETCH.\n"
+            "Exiting with return value 115 (EXIT_ERR_FETCH) 1/50 nb_errors/max_errors\n")
+        tips = diagnose(text)
+        self.assertEqual(len(tips), 1, tips)
+        self.assertIn("there are N among M", tips[0])
+        self.assertNotIn("2500 MB", tips[0])
+
+    def test_throttled_fetch_errors_do_not_claim_broken_messages(self):
+        """Fetch loi vi bi Gmail bop thi cau tra loi la han muc, khong phai mail hong."""
+        text = ("Err 1/1: - msg [Gmail]/Sent/17821 could not be fetched: * BYE "
+                "[OVERQUOTA] Account exceeded command or bandwidth limits. (5x)\n"
+                "The most frequent error is ERR_Host1_FETCH.\n")
+        tips = diagnose(text)
+        self.assertEqual(len(tips), 1, tips)
+        self.assertIn("2500 MB", tips[0])
+
+    def test_real_gmail_throttle_log_gives_only_true_hints(self):
+        """Cac dong quyet dinh cua mot log that bi Gmail chan (27/08/2026).
+
+        Hop nay dinh ca hai chuyen thuc: bi bop bang thong, VA co mot mail
+        Gmail khong tra ra. Truoc day log nay sinh 3 goi y, 2 trong so do sai
+        (do hop dich IceWarp day, va doi tang timeout).
+        """
+        text = (
+            "Host1: imap connection timeout is 300 seconds\n"
+            "Host2: imap connection timeout is 300 seconds\n"
+            "Average bandwidth rate                  : 328.8 KiB/s\n"
+            "Detected 2 errors\n"
+            "Err 1/2: - msg INBOX/73359 {0} S[478533] could not be fetched:\n"
+            "Err 2/2: - msg [Gmail]/Sent/17821 could not be fetched: * BYE "
+            "[OVERQUOTA] Account exceeded command or bandwidth limits. (5x)\n"
+            "The most frequent error is ERR_Host1_FETCH.\n"
+            "Failure: lost connection for host1 [imap.gmail.com]\n"
+            "Exiting with return value 115 (EXIT_ERR_FETCH) 3/50 nb_errors/max_errors\n")
+        tips = diagnose(text)
+        self.assertEqual(len(tips), 2, "van con goi y thua: %s" % tips)
+        self.assertIn("2500 MB", tips[0])                 # nguyen nhan dung sync
+        self.assertIn("there are N among M", tips[1])     # Err 1/2, mail hong that
+        self.assertFalse(any("IceWarp da day" in t for t in tips), tips)
+        self.assertFalse(any("Tang timeout" in t for t in tips), tips)
+
     def test_most_important_hint_comes_first(self):
         text = ("connection timed out later on\n"
                 "NO [LIMIT] Bandwidth limit exceeded\n")

@@ -111,8 +111,8 @@ trong `config.example.ini`.
 Đừng chạy cả danh sách ngay lần đầu. Cho đủ 20 dòng vào `users.csv`, rồi dùng
 `--only` để chỉ đụng vào một hộp thư.
 
-**Chọn hộp thư nào:** một hộp **dưới 2.5 GB** (Gmail giới hạn 2500 MB/ngày, hộp
-lớn hơn không xong trong ngày) và có đủ Sent, Drafts, vài label lồng nhau — như
+**Chọn hộp thư nào:** một hộp **nhỏ** (vài trăm MB, để vòng thử xong trong nửa
+tiếng chứ không phải nửa ngày) và có đủ Sent, Drafts, vài label lồng nhau — như
 vậy mới kiểm được phần đổi tên folder.
 
 ```bash
@@ -384,13 +384,24 @@ hỏi nhà cung cấp — không có tham số imapsync nào chữa được.
 
 ## Giới hạn của Gmail — cái này quyết định lịch chạy
 
-Google giới hạn **2500 MB/ngày cho mỗi account** qua IMAP download. Vượt thì
-account bị khoá IMAP, thường 1 giờ, có thể tới 24 giờ.
+Google **công bố** giới hạn 2500 MB/ngày cho mỗi account qua IMAP download.
+Vượt thì account bị khoá IMAP, thường 1 giờ, có thể tới 24 giờ.
+
+> **2500 MB là trần công bố, không phải trần thực tế.** Số liệu một đêm chạy
+> thật trên Workspace (8 mailbox, 46,5 GB, 103.546 mail): hộp **14,6 GB chạy
+> liền mạch 11h23m không hề bị chặn**, hộp 6,5 GB cũng vậy. Lấy 2500 MB ra tính
+> lịch thì hộp đó phải mất 6 ngày — thực tế xong trong một đêm.
 
 Hệ quả thực tế:
 
-- **Hộp thư >2.5 GB không thể migrate xong trong một ngày.** Không có cách lách.
-  Chạy nhiều ngày, mỗi ngày chạy lại cùng lệnh `sync`.
+- **Không dự báo được hộp nào bị chặn bằng dung lượng.** Trong đêm nói trên, hộp
+  kéo *nhiều byte nhất* (14,6 GB) về đích sạch, còn hộp bị cắt lại đứng sau nó
+  về byte (13,8 GB) nhưng **nhiều mail nhất** — 48k mail được nhận diện. Thông
+  báo của Google là `exceeded command or bandwidth limits`: nó đếm cả **số lệnh
+  IMAP**, mà số lệnh tính theo mail *quét qua*, không phải mail *chuyển được*.
+  Nên hộp nhiều mail nhỏ rủi ro hơn hộp ít mail nặng.
+- **Bị chặn không phải là hỏng.** Chờ reset rồi chạy lại cùng lệnh `sync`; mail
+  đã chuyển không bị chép lại. Hộp lớn thì lặp lại vài ngày cho đến khi hết.
 - Bắt đầu sync đầy đủ **sớm hơn ngày cutover vài ngày**, đừng để đêm cuối.
 - Giới hạn tính theo từng account, nên nhiều mailbox chạy song song không cộng dồn.
 - Gmail cũng chỉ cho tối đa 15 kết nối IMAP đồng thời cho một account.
@@ -486,9 +497,10 @@ Tool tự dịch các lỗi hay gặp thành việc cần làm. Bảng dưới l
 | `Invalid credentials` phía Gmail | Đang dùng mật khẩu thường thay vì App Password |
 | `Application-specific password required` | Account bật 2FA, phải dùng App Password |
 | `Web login required` | Google chặn; đăng nhập Gmail bằng trình duyệt một lần rồi thử lại |
-| `Bandwidth limit` / `[LIMIT]` | Đụng giới hạn 2500 MB/ngày; chờ reset rồi chạy lại |
+| `Bandwidth limit` / `[LIMIT]` | Gmail chặn vì vượt hạn mức IMAP; chờ reset rồi chạy lại |
 | `Too many simultaneous connections` | Quá 15 kết nối trên một account; giảm `workers` |
-| `[OVERQUOTA]` | Hộp thư IceWarp đầy |
+| `[OVERQUOTA]` kèm `could not be fetched` | Là hạn mức **Gmail**, không phải IceWarp — xem mục giới hạn ở trên |
+| `[OVERQUOTA]` lúc ghi sang đích | Hộp thư IceWarp đầy |
 | `Message too big` | Vượt giới hạn kích thước của IceWarp; đặt `maxsize` |
 | `[TRYCREATE]` | Không tạo được folder bên IceWarp — thường do trùng tên với folder PIM (Contacts, Calendar, Tasks, Notes) |
 | `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
