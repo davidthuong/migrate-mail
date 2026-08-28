@@ -44,6 +44,7 @@ ACTIONS = {
     "folders": "Tao cay folder",
     "dry": "Chay khan",
     "sync": "Chay that",
+    "resume": "Chay tiep (bo qua hop da xong)",
     "verify": "Doi chieu ngay thang",
 }
 
@@ -161,6 +162,9 @@ def _make_args(action: str, only: List[str], users_path: Path) -> _Args:
         args.sizes = True
     elif action == "dest":
         args.dest = True
+    elif action == "resume":
+        # Giong "sync" nhung bo qua mailbox da co state/<mailbox>/done.marker.
+        args.resume = True
     return args
 
 
@@ -172,6 +176,7 @@ _ACTION_FN: Dict[str, Callable] = {
     "sizes": lambda a, c: cli.cmd_sync(a, c),
     "dry": lambda a, c: cli.cmd_sync(a, c),
     "sync": lambda a, c: cli.cmd_sync(a, c),
+    "resume": lambda a, c: cli.cmd_sync(a, c),
     "verify": lambda a, c: cli.cmd_verify(a, c),
 }
 

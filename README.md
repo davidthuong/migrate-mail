@@ -436,6 +436,9 @@ Trên dashboard:
 - Chọn vài mailbox bằng checkbox, hoặc để trống để áp dụng cho tất cả
 - Bấm chạy từng bước: kiểm tra đăng nhập → kế hoạch folder → tạo cây folder →
   chạy khan → chạy thật → đối chiếu ngày
+- `Chạy tiếp` = `sync --resume`: bỏ qua mailbox đã chạy xong (có
+  `state/<mailbox>/done.marker`). Dùng nó thay `Chạy thật` khi lần trước chỉ
+  hỏng vài hộp, khỏi quét lại những hộp đã xong
 - Log chạy trực tiếp, tự cuộn theo
 - Form thêm mailbox, ghi thẳng vào `users.csv`; dấu ✕ ở cuối mỗi dòng để xoá
   khỏi danh sách (chỉ xoá dòng trong CSV — mail đã chuyển và log vẫn còn)
@@ -446,7 +449,9 @@ Ba nguyên tắc an toàn của giao diện này:
   cho biết ô đó đã có mật khẩu hay chưa.
 - **Mỗi lúc chỉ một tác vụ.** Bấm nút thứ hai khi đang chạy sẽ bị từ chối, không
   có chuyện hai lệnh imapsync giẫm lên nhau.
-- **`Chạy thật` hỏi lại trước khi chạy**, các nút còn lại đều không ghi gì.
+- **Hai nút có ghi vào IceWarp — `Chạy thật` và `Chạy tiếp` — đều hỏi lại trước
+  khi chạy**, và hộp thoại nói rõ đang áp dụng cho bao nhiêu mailbox. Các nút
+  còn lại không ghi gì.
 
 Mở ra ngoài bằng `--host 0.0.0.0` thì được, nhưng server sẽ cảnh báo — đừng làm
 vậy trừ khi có tường lửa chặn sẵn.

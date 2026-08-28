@@ -104,6 +104,7 @@ PAGE = r"""<!doctype html>
       <button data-act="folders">Tạo cây folder</button>
       <button data-act="dry">Chạy khan</button>
       <button data-act="sync" class="primary">Chạy thật</button>
+      <button data-act="resume" title="Bỏ qua mailbox đã chạy xong trước đó">Chạy tiếp</button>
       <span class="sep"></span>
       <button data-act="verify">Đối chiếu ngày</button>
       <span class="scope" id="scope"></span>
@@ -292,8 +293,13 @@ document.querySelectorAll("button[data-act]").forEach((btn) => {
     const act = btn.dataset.act;
     const only = scope();
     const who = only.length ? only.length + " mailbox đã chọn" : "TẤT CẢ mailbox";
-    if (act === "sync" && !confirm(
-        "Chạy thật cho " + who + "?\n\nMail sẽ được ghi vào IceWarp.")) return;
+    if (act === "sync" || act === "resume") {
+      const msg = act === "resume"
+        ? "Chạy tiếp cho " + who + "?\n\nMail sẽ được ghi vào IceWarp. "
+          + "Mailbox đã chạy xong trước đó sẽ bị bỏ qua."
+        : "Chạy thật cho " + who + "?\n\nMail sẽ được ghi vào IceWarp.";
+      if (!confirm(msg)) return;
+    }
     document.querySelectorAll("button[data-act]").forEach((b) => { b.disabled = true; });
     stick = true;
     try {

@@ -4,6 +4,7 @@
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -209,6 +210,27 @@ class TestRunJob(WebTestCase):
         box = [m for m in self.state()["mailboxes"] if m["src_user"] == "an@cu.com"][0]
         self.assertEqual(box["ket_qua"], "OK")
         self.assertEqual(box["mail"], "421")
+
+    def test_resume_skips_a_mailbox_already_done(self):
+        """Dashboard phai doc done.marker giong het CLI --resume."""
+        self.run_action("sync", ["an@cu.com"])
+        job = self.run_action("resume", ["an@cu.com"])
+        self.assertEqual(job["exit_code"], 0)
+        self.assertIn("Khong con mailbox nao can chay", "\n".join(job["lines"]))
+
+    def test_resume_still_runs_a_mailbox_not_done(self):
+        job = self.run_action("resume", ["binh@cu.com"])
+        self.assertEqual(job["exit_code"], 0)
+        self.assertTrue((self.tmp / "state" / "binh@cu.com" / "done.marker").exists())
+
+    def test_resume_leaves_out_the_finished_mailbox(self):
+        """Tinh huong that: mot hop da xong, hop kia thi chua."""
+        self.run_action("sync", ["an@cu.com"])
+        job = self.run_action("resume", ["an@cu.com", "binh@cu.com"])
+        text = "\n".join(job["lines"])
+        self.assertIn("bo qua 1 mailbox", text)
+        self.assertIn("binh@cu.com", text)
+        self.assertNotIn("an@cu.com", text)
 
     def test_unknown_action_rejected(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
@@ -470,3 +492,39 @@ class TestPageScript(unittest.TestCase):
 
     def test_script_is_not_empty(self):
         self.assertGreater(len(self.script_source()), 1000)
+
+
+class TestActionTable(unittest.TestCase):
+    """Ban do tac vu -> tham so.
+
+    Nut tren trang duoc viet cung trong HTML chu khong sinh ra tu ACTIONS, nen
+    ba noi (HTML, ACTIONS, _ACTION_FN) rat de lech nhau ma khong ai bao. Cho
+    den truoc khi co 'resume', web hoan toan khong biet done.marker la gi
+    trong khi CLI thi co -- cung mot tool, hai cua vao hieu "da xong" khac nhau.
+    """
+
+    def args(self, action):
+        return web._make_args(action, [], Path("users.csv"))
+
+    def test_resume_sets_only_the_resume_flag(self):
+        a = self.args("resume")
+        self.assertTrue(a.resume)
+        self.assertFalse(a.dry)
+        self.assertFalse(a.sizes)
+        self.assertFalse(a.folders_only)
+
+    def test_plain_sync_does_not_resume(self):
+        self.assertFalse(self.args("sync").resume)
+
+    def test_every_action_has_a_function(self):
+        self.assertEqual(set(web.ACTIONS), set(web._ACTION_FN))
+
+    def test_every_button_on_the_page_is_a_known_action(self):
+        from migrate_mail.web_ui import PAGE
+        acts = set(re.findall(r'data-act="([a-z-]+)"', PAGE))
+        self.assertTrue(acts, "khong doc duoc nut nao tu trang")
+        self.assertEqual(acts - set(web.ACTIONS), set())
+
+    def test_resume_has_a_button(self):
+        from migrate_mail.web_ui import PAGE
+        self.assertIn('data-act="resume"', PAGE)
