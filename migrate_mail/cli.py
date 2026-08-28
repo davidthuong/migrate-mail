@@ -595,7 +595,7 @@ def cmd_report(args, cfg: Config) -> int:
     if not target.exists():
         say("Khong thay %s" % target)
         return 1
-    rows = report.load_run(target)
+    rows = report.refresh_hints(report.load_run(target))
     say("Lan chay: %s\n" % target.name)
     report.print_table(rows, emit=say)
     report.print_summary(rows, emit=say)

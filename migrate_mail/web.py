@@ -226,7 +226,9 @@ def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
             "loi": row.get("loi", ""),
             # Dung chung quy tac voi bao cao: dong OK khong co ghi chu
             "ghi_chu": report._note(row) if row else "",
-            "goi_y": [t for t in (row.get("goi_y") or "").split(" | ") if t],
+            # Tinh lai tu log chu khong doc goi y da dong bang trong file run:
+            # luat chan doan tot len thi bao cao cu phai tu dung theo.
+            "goi_y": report.hints_for_row(row) if row else [],
             "mode": row.get("mode", ""),
             "run": row.get("run", ""),
         })

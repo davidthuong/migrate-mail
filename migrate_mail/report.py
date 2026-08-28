@@ -14,7 +14,9 @@ import json
 import textwrap
 import time
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
+
+from .hints import diagnose
 
 Row = Dict[str, str]
 
@@ -168,6 +170,82 @@ def save_run(rows: Sequence[Row], path: Path) -> Path:
 def load_run(path: Path) -> List[Row]:
     with Path(path).open(encoding="utf-8") as fh:
         return json.load(fh).get("results", [])
+
+
+# --------------------------------------------------------------------------- #
+# Goi y: tinh lai tu log, khong doc tu file da luu
+# --------------------------------------------------------------------------- #
+# Truoc day goi y bi dong bang vao state/runs/*.json ngay luc chay. Khi luat
+# chan doan tot len, moi bao cao cu van hien nguyen cai sai -- va bao cao cua
+# mot mailbox se khong bao gio duoc sua neu no khong con duoc chay lai nua.
+# Do la loi luu KET LUAN thay vi luu BANG CHUNG.
+#
+# Log moi la bang chung, va log van nam nguyen trong logs/. Nen doc lai log.
+# Ba dieu phai luu y:
+#   - Log co the rat lon (mot lan chay 12 tieng), nen chi doc phan duoi. Khoi
+#     loi cua imapsync ("++++ Listing N errors") nam o cuoi; con nhung lan
+#     hong som (sai mat khau, thieu module) thi ca file von da ngan.
+#   - Dashboard hoi lai moi 1,2 giay luc dang chay, nen phai nho ket qua theo
+#     (kich thuoc, mtime) de khong doc di doc lai mot file khong doi.
+#   - Mat log thi quay ve dung goi y da luu, khong de trong.
+
+_TAIL_BYTES = 256 * 1024
+_hint_cache: Dict[str, tuple] = {}
+
+
+def log_tail(path, limit: int = _TAIL_BYTES) -> str:
+    """Doc phan duoi cua file, bo dong dau tien neu no bi cat giua chung."""
+    p = Path(path)
+    start = max(0, p.stat().st_size - limit)
+    with p.open("rb") as fh:
+        if start:
+            fh.seek(start)
+        raw = fh.read()
+    text = raw.decode("utf-8", errors="replace")
+    if start:
+        _, _, text = text.partition("\n")
+    return text
+
+
+def hints_from_log(logpath: str) -> Optional[List[str]]:
+    """Goi y tinh lai tu log. None neu khong con doc duoc log."""
+    if not logpath:
+        return None
+    p = Path(logpath)
+    try:
+        st = p.stat()
+    except OSError:
+        return None
+    key, stamp = str(p), (st.st_size, st.st_mtime)
+    cached = _hint_cache.get(key)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    try:
+        tips = diagnose(log_tail(p))
+    except OSError:
+        return None
+    if len(_hint_cache) > 200:            # chay lau ngay thi dung phinh mai
+        _hint_cache.clear()
+    _hint_cache[key] = (stamp, tips)
+    return tips
+
+
+def hints_for_row(row: Row) -> List[str]:
+    """Goi y cua mot dong bao cao, uu tien tinh lai tu log.
+
+    Dong OK giu nguyen nhu da luu: goi y chi co nghia khi that bai, va viec
+    doc lai log cua ca tram lan chay thanh cong la phi cong.
+    """
+    stored = [t for t in (row.get("goi_y") or "").split(" | ") if t]
+    if row.get("ket_qua") != "LOI":
+        return stored
+    tips = hints_from_log(row.get("log", ""))
+    return stored if tips is None else tips
+
+
+def refresh_hints(rows: Sequence[Row]) -> List[Row]:
+    """Ban sao cua rows voi truong goi_y da duoc tinh lai tu log."""
+    return [dict(r, goi_y=" | ".join(hints_for_row(r))) for r in rows]
 
 
 _HTML_HEAD = """<meta charset="utf-8">

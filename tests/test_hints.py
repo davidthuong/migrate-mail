@@ -2,8 +2,10 @@
 """Test phan dich loi imapsync thanh goi y, va phan ket xuat bao cao."""
 
 import os
+import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -216,3 +218,86 @@ class TestFormatting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestHintsRecomputedFromLog(unittest.TestCase):
+    """Goi y phai duoc tinh lai tu log, khong doc tu file run da luu.
+
+    Day la bai hoc tu mot su co that: bao cao dem 27/08 dong bang 3 goi y vao
+    state/runs/*.json, trong do 2 sai. Sau khi sua luat chan doan, bao cao cu
+    van hien nguyen cai sai -- va se hien mai mai, vi mailbox do da xong nen
+    khong bao gio duoc chay lai de ghi de.
+    """
+
+    OLD_WRONG = "Hop thu dich tren IceWarp da day. Tang quota..."
+    LOG = ("Host1: imap connection timeout is 300 seconds\n"
+           "Average bandwidth rate                  : 202.2 KiB/s\n"
+           "Err 1/1: - msg INBOX/16947 {0} S[22184] could not be fetched:\n"
+           "Exiting with return value 115 (EXIT_ERR_FETCH) 1/50 nb_errors\n")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="mmhint-"))
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
+        self.log = self.write(self.tmp / "a.sync.log", self.LOG)
+        report._hint_cache.clear()
+
+    @staticmethod
+    def write(path, text):
+        """Ghi voi newline="\\n" giong het runner, khong de Windows doi ra CRLF."""
+        with path.open("w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        return path
+
+    def failed_row(self, **kw):
+        return row(ket_qua="LOI", goi_y=self.OLD_WRONG, log=str(self.log), **kw)
+
+    def test_stale_hint_in_the_saved_run_is_replaced(self):
+        tips = report.hints_for_row(self.failed_row())
+        self.assertTrue(any("there are N among M" in t for t in tips), tips)
+        self.assertFalse(any("IceWarp da day" in t for t in tips), tips)
+
+    def test_falls_back_to_stored_hint_when_log_is_gone(self):
+        self.log.unlink()
+        self.assertEqual(report.hints_for_row(self.failed_row()), [self.OLD_WRONG])
+
+    def test_row_without_log_keeps_what_was_saved(self):
+        self.assertEqual(report.hints_for_row(row(ket_qua="LOI", goi_y="cu", log="")),
+                         ["cu"])
+
+    def test_successful_row_is_left_alone(self):
+        """Dong OK khong doc log: goi y chi co nghia khi that bai."""
+        self.assertEqual(report.hints_for_row(row(ket_qua="OK", log=str(self.log))), [])
+
+    def test_refresh_hints_rewrites_the_whole_run(self):
+        rows = report.refresh_hints([self.failed_row(), row(ket_qua="OK")])
+        self.assertIn("there are N among M", rows[0]["goi_y"])
+        self.assertEqual(rows[1]["goi_y"], "")
+
+    def test_reads_only_the_tail_of_a_huge_log(self):
+        """Log 12 tieng co the rat lon; doc ca file moi 1,2 giay la khong duoc."""
+        big = self.tmp / "big.log"
+        with big.open("w", encoding="utf-8") as fh:
+            fh.write("dong rac khong lien quan\n" * 60000)   # ~1.4 MB
+            fh.write(self.LOG)
+        text = report.log_tail(big)
+        self.assertLessEqual(len(text), report._TAIL_BYTES)
+        self.assertIn("could not be fetched", text)
+        self.assertTrue(any("there are N among M" in t
+                            for t in report.hints_for_row(
+                                row(ket_qua="LOI", log=str(big)))))
+
+    def test_tail_never_starts_mid_line(self):
+        big = self.write(self.tmp / "cut.log",
+                         "x" * (report._TAIL_BYTES + 500) + "\nnguyen ven\n")
+        self.assertEqual(report.log_tail(big), "nguyen ven\n")
+
+    def test_cache_is_refreshed_when_the_log_grows(self):
+        """Log dang chay thi lon dan; goi y phai doi theo, khong ket o lan dau."""
+        quiet = self.tmp / "live.log"
+        quiet.write_text("Transfer started\n", encoding="utf-8")
+        self.assertEqual(report.hints_for_row(row(ket_qua="LOI", log=str(quiet))), [])
+        with quiet.open("a", encoding="utf-8") as fh:
+            fh.write("NO [ALERT] Too many simultaneous connections\n")
+        os.utime(str(quiet), (time.time() + 2, time.time() + 2))
+        tips = report.hints_for_row(row(ket_qua="LOI", log=str(quiet)))
+        self.assertTrue(any("15 ket noi" in t for t in tips), tips)

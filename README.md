@@ -477,6 +477,11 @@ python3 mm.py report --out bao-cao.html
 
 Mailbox lỗi sẽ kèm gợi ý xử lý cụ thể, không phải mã lỗi trần.
 
+Gợi ý được **tính lại từ log** mỗi lần xem, không đọc từ file `runs/*.json`. Nhờ
+vậy khi luật chẩn đoán được sửa, mọi báo cáo cũ tự đúng theo — kể cả báo cáo của
+mailbox đã xong và sẽ không bao giờ chạy lại. Đổi lại: xoá `logs/` thì các lần
+chạy cũ mất gợi ý (số liệu vẫn còn), và tool quay về dùng gợi ý đã lưu.
+
 ---
 
 ## Các lệnh khác
