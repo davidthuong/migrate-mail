@@ -207,6 +207,68 @@ def latest_rows(runs_dir) -> Dict[str, Row]:
     return out
 
 
+def _float(row: Row, key: str) -> float:
+    try:
+        return float(row.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def merged_rows(runs_dir) -> List[Row]:
+    """Mot dong cho moi mailbox, gop tu tat ca cac lan chay.
+
+    Trang thai (ket qua, folder, ghi chu, log) lay tu lan chay MOI NHAT -- do
+    la tinh hinh hien tai. Nhung khoi luong (mail, dung luong, thoi gian) thi
+    CONG DON qua moi lan chay sync.
+
+    Vi sao phai cong don: mot hop thu bi Gmail cat giua chung roi chay lai da
+    chuyen mail o ca hai lan, nhung moi dong chi mang thong ke cua rieng lan
+    do ("Messages transferred" cua imapsync). Lay lan cuoi lam bao cao la ke
+    thieu cong cua chinh minh -- co lan bao 87.936 mail trong khi thuc te da
+    chuyen gan 122.700.
+
+    Cong don khong so dem trung: imapsync bo qua mail da co ben dich, nen lan
+    chay sau chi dem phan no that su chep them.
+
+    Lan chay --dry khong chep gi ca nen khong duoc cong vao. So loi thi lay
+    tu lan chay cuoi chu khong cong: cung mot mail hong se bi dem lai o moi
+    lan chay.
+    """
+    runs_dir = Path(runs_dir)
+    latest = latest_rows(runs_dir)
+    if not latest:
+        return []
+
+    totals: Dict[str, Dict[str, float]] = {}
+    for path in sorted(runs_dir.glob("*.json")):
+        try:
+            rows = load_run(path)
+        except (OSError, ValueError):
+            continue
+        for r in rows:
+            if r.get("mode") != "sync":
+                continue
+            t = totals.setdefault(r.get("src_user", ""),
+                                  {"mail": 0.0, "bytes": 0.0, "sec": 0.0})
+            t["mail"] += _int(r, "mail_chuyen")
+            t["bytes"] += _int(r, "bytes")
+            t["sec"] += _float(r, "duration_sec")
+
+    out: List[Row] = []
+    for user, row in latest.items():
+        t = totals.get(user)
+        if not t:                       # chi tung chay --dry
+            out.append(dict(row))
+            continue
+        out.append(dict(row,
+                        mail_chuyen=str(int(t["mail"])),
+                        bytes=str(int(t["bytes"])),
+                        dung_luong=human_bytes(t["bytes"]),
+                        duration_sec="%.1f" % t["sec"],
+                        thoi_gian=human_duration(t["sec"])))
+    return sorted(out, key=lambda r: r.get("src_user", ""))
+
+
 # --------------------------------------------------------------------------- #
 # Goi y: tinh lai tu log, khong doc tu file da luu
 # --------------------------------------------------------------------------- #
@@ -301,7 +363,12 @@ _HTML_HEAD = """<meta charset="utf-8">
 """
 
 
-def write_html(rows: Sequence[Row], path: Path) -> Path:
+def write_html(rows: Sequence[Row], path: Path, note_text: str = "") -> Path:
+    """`note_text` giai thich cot nao mang nghia gi, in ngay duoi tieu de.
+
+    Bao cao gop (`report --all`) cong don khoi luong qua nhieu lan chay, khac
+    voi bao cao mot lan chay -- nguoi doc phai biet dieu do truoc khi tin so.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     trs = []
@@ -330,12 +397,14 @@ def write_html(rows: Sequence[Row], path: Path) -> Path:
     total_bytes = sum(_int(r, "bytes") for r in rows)
     body = (
         "<h1>Bao cao migrate mail: Google &rarr; IceWarp</h1>"
-        '<div class="sub">Tao luc %s</div>'
+        '<div class="sub">Tao luc %s%s</div>'
         "<table><thead><tr><th>Nguon</th><th>Dich</th><th>Ket qua</th><th>Folder</th>"
         "<th>Mail</th><th>Dung luong</th><th>Thoi gian</th><th>Loi le</th>"
         "<th>Ghi chu</th></tr></thead><tbody>%s</tbody></table>"
         '<div class="totals">%d/%d mailbox thanh cong &middot; %s mail &middot; %s</div>'
-        % (time.strftime("%Y-%m-%d %H:%M:%S"), "".join(trs), ok, len(rows),
+        % (time.strftime("%Y-%m-%d %H:%M:%S"),
+           (" &middot; " + html.escape(note_text)) if note_text else "",
+           "".join(trs), ok, len(rows),
            "{:,}".format(total_msgs), human_bytes(total_bytes)))
     with path.open("w", encoding="utf-8", newline="\n") as fh:
         fh.write(_HTML_HEAD + body + "\n")

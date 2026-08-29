@@ -631,12 +631,14 @@ def cmd_report(args, cfg: Config) -> int:
         return 0
 
     merged = report.latest_rows(runs_dir)
+    note = ""
     if args.all:
-        # Gop moi lan chay: dong moi nhat cua tung mailbox. Day moi la thu
-        # dung de bao cao toan bo cuoc migrate.
-        rows = report.refresh_hints(
-            sorted(merged.values(), key=lambda r: r.get("src_user", "")))
-        say("Gop %d mailbox tu %d lan chay da luu.\n" % (len(rows), len(runs)))
+        # Gop moi lan chay. Day moi la thu dung de bao cao toan bo cuoc migrate.
+        rows = report.refresh_hints(report.merged_rows(runs_dir))
+        note = ("Gop %d mailbox tu %d lan chay. Cot Mail, Dung luong va T.gian "
+                "la tong cong don qua tat ca cac lan chay; cot KQ va Folder la "
+                "cua lan chay moi nhat." % (len(rows), len(runs)))
+        say(note + "\n")
     else:
         target = runs_dir / args.run if args.run else runs[-1]
         if not target.exists():
@@ -654,7 +656,7 @@ def cmd_report(args, cfg: Config) -> int:
     if args.out:
         out = Path(args.out)
         if out.suffix.lower() == ".html":
-            say("\nDa ghi %s" % report.write_html(rows, out))
+            say("\nDa ghi %s" % report.write_html(rows, out, note))
         else:
             say("\nDa ghi %s" % report.write_csv(rows, out))
     return 0

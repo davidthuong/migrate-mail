@@ -345,3 +345,71 @@ class TestLatestRows(unittest.TestCase):
         p2 = self.save("20260101-000000", [row(src_user="a@x.com", ket_qua="OK")])
         self.assertNotEqual(p1, p2)
         self.assertEqual(report.latest_rows(self.tmp)["a@x.com"]["ket_qua"], "OK")
+
+
+class TestMergedRows(unittest.TestCase):
+    """Bao cao ca cuoc migrate: trang thai lay lan cuoi, khoi luong cong don.
+
+    Moi dong run chi mang thong ke cua rieng lan chay do ("Messages
+    transferred" cua imapsync). Hop thu bi Gmail cat giua chung roi chay lai
+    da chuyen mail o ca hai lan, nen lay lan cuoi lam bao cao la ke thieu
+    cong cua chinh minh -- co lan bao 87.936 mail trong khi thuc te gan
+    122.700.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="mmmerge-"))
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
+
+    def save(self, stamp, rows):
+        return report.save_run(rows, self.tmp / ("%s.json" % stamp))
+
+    def test_volume_is_summed_but_status_comes_from_the_last_run(self):
+        self.save("20260827-000000", [row(src_user="a@x.com", ket_qua="LOI",
+                                          folder="9/11", mail_chuyen="34675",
+                                          bytes="14778418601", duration_sec="43897.7")])
+        self.save("20260828-000000", [row(src_user="a@x.com", ket_qua="OK",
+                                          folder="11/11", mail_chuyen="14445",
+                                          bytes="9556302233", duration_sec="17400.0")])
+        merged = report.merged_rows(self.tmp)
+        self.assertEqual(len(merged), 1)
+        r = merged[0]
+        self.assertEqual(r["mail_chuyen"], "49120")                  # 34675+14445
+        self.assertEqual(r["bytes"], str(14778418601 + 9556302233))
+        self.assertEqual(r["duration_sec"], "61297.7")               # tong thoi gian
+        self.assertEqual(r["ket_qua"], "OK")                         # lan cuoi
+        self.assertEqual(r["folder"], "11/11")                       # lan cuoi
+
+    def test_human_columns_follow_the_sum(self):
+        self.save("20260827-000000", [row(src_user="a@x.com", mail_chuyen="1",
+                                          bytes=str(1024 ** 3), duration_sec="60")])
+        self.save("20260828-000000", [row(src_user="a@x.com", mail_chuyen="1",
+                                          bytes=str(1024 ** 3), duration_sec="60")])
+        r = report.merged_rows(self.tmp)[0]
+        self.assertEqual(r["dung_luong"], "2.0 GB")
+        self.assertEqual(r["thoi_gian"], "2m00s")
+
+    def test_dry_runs_are_not_counted(self):
+        """--dry khong chep gi ca; cong vao la ra so ao."""
+        self.save("20260827-000000", [row(src_user="a@x.com", mail_chuyen="100",
+                                          bytes="1000")])
+        self.save("20260828-000000", [row(src_user="a@x.com", mail_chuyen="99",
+                                          bytes="999", mode="dry")])
+        self.assertEqual(report.merged_rows(self.tmp)[0]["mail_chuyen"], "100")
+
+    def test_a_mailbox_run_once_is_left_alone(self):
+        """8/10 hop chi chay mot lan -- so phai y nguyen."""
+        self.save("20260827-000000", [row(src_user="a@x.com", mail_chuyen="2365",
+                                          bytes="133500000")])
+        r = report.merged_rows(self.tmp)[0]
+        self.assertEqual(r["mail_chuyen"], "2365")
+        self.assertEqual(r["bytes"], "133500000")
+
+    def test_each_mailbox_gets_one_row_sorted_by_address(self):
+        self.save("20260827-000000", [row(src_user="b@x.com"), row(src_user="a@x.com")])
+        self.save("20260828-000000", [row(src_user="a@x.com")])
+        self.assertEqual([r["src_user"] for r in report.merged_rows(self.tmp)],
+                         ["a@x.com", "b@x.com"])
+
+    def test_no_runs_gives_nothing(self):
+        self.assertEqual(report.merged_rows(self.tmp), [])

@@ -495,8 +495,26 @@ lần chạy đó. Chạy rải rác vài đêm — 8 hộp một đêm, rồi t
 thì không file nào còn chứa đủ danh sách, và `report` không kèm `--all` sẽ ra
 một bảng đúng nhưng chỉ có một dòng. Khi điều đó xảy ra, tool tự nhắc.
 
-`--all` gộp theo cùng cách bảng trên dashboard vẫn gộp: lấy dòng mới nhất của
-từng địa chỉ qua tất cả các lần chạy.
+`--all` gộp một dòng cho mỗi mailbox, nhưng hai nhóm cột mang nghĩa khác nhau:
+
+| Cột | Lấy từ đâu |
+|---|---|
+| Kết quả, Folder, Ghi chú | Lần chạy **mới nhất** — đó là trạng thái hiện tại |
+| Mail, Dung lượng, Thời gian | **Cộng dồn** qua tất cả các lần chạy `sync` |
+
+Phải cộng dồn vì mỗi dòng run chỉ mang thống kê của riêng lần chạy đó
+(`Messages transferred` của imapsync). Một hộp thư bị Gmail cắt giữa chừng rồi
+chạy lại đã chuyển mail ở cả hai lần — lấy lần cuối làm báo cáo là kể thiếu
+công của chính mình. Trong một cuộc migrate thật, cách cũ báo 87.936 mail
+trong khi thực tế đã chuyển gần 122.700.
+
+Cộng dồn không sợ đếm trùng: imapsync bỏ qua mail đã có bên đích, nên lần chạy
+sau chỉ đếm phần nó thật sự chép thêm. Lần chạy `--dry` không chép gì nên
+không được cộng vào.
+
+> Bảng trên **dashboard** vẫn hiện số của lần chạy gần nhất, không cộng dồn —
+> nó là màn hình theo dõi vận hành, không phải báo cáo tổng kết. Đừng ngạc
+> nhiên khi hai bên lệch nhau ở hộp thư đã chạy nhiều lần.
 
 Mailbox lỗi sẽ kèm gợi ý xử lý cụ thể, không phải mã lỗi trần.
 

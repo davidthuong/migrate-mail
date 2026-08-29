@@ -295,6 +295,29 @@ class TestReport(CliTestCase):
         _code, out = self.run_cli("report")
         self.assertNotIn("--all", out)
 
+    def test_all_sums_volume_when_a_mailbox_ran_more_than_once(self):
+        """Hop bi Gmail cat giua chung roi chay lai da chuyen o ca hai lan;
+        lay lan cuoi lam bao cao la ke thieu cong cua chinh minh."""
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync", "--only", "an@cu.com")
+            self.run_cli("sync", "--only", "an@cu.com")
+        _code, out = self.run_cli("report", "--all")
+        self.assertIn("842", out)                       # 421 + 421
+        self.assertIn("tong cong don", out)
+
+    def test_all_html_says_the_columns_are_totals(self):
+        self.two_separate_runs()
+        out_path = self.tmp / "gop.html"
+        self.run_cli("report", "--all", "--out", str(out_path))
+        self.assertIn("tong cong don", out_path.read_text(encoding="utf-8"))
+
+    def test_plain_report_html_has_no_such_note(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync")
+        out_path = self.tmp / "mot-lan.html"
+        self.run_cli("report", "--out", str(out_path))
+        self.assertNotIn("tong cong don", out_path.read_text(encoding="utf-8"))
+
     def test_all_can_export_html(self):
         self.two_separate_runs()
         out_path = self.tmp / "gop.html"
