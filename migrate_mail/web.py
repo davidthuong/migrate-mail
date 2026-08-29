@@ -147,6 +147,7 @@ class _Args:
         self.dest = False
         self.sample = 200
         self.list = False
+        self.all = False
         self.run = ""
         self.out = ""
         self.__dict__.update(kw)
@@ -186,19 +187,12 @@ _ACTION_FN: Dict[str, Callable] = {
 # --------------------------------------------------------------------------- #
 
 def _latest_rows(cfg: Config) -> Dict[str, Dict]:
-    """Ket qua sync gan nhat cho tung mailbox, gop tu cac lan chay da luu."""
-    runs_dir = Path(cfg.paths.statedir) / "runs"
-    out: Dict[str, Dict] = {}
-    if not runs_dir.exists():
-        return out
-    for path in sorted(runs_dir.glob("*.json")):     # cu -> moi, ban sau de len
-        try:
-            for row in report.load_run(path):
-                if row.get("mode") in ("sync", "dry"):
-                    out[row.get("src_user", "")] = dict(row, run=path.stem)
-        except (OSError, ValueError):
-            continue
-    return out
+    """Ket qua sync gan nhat cho tung mailbox, gop tu cac lan chay da luu.
+
+    Logic gop nam trong report.latest_rows de lenh `report --all` dung chung,
+    khong de dashboard va CLI bao cao lech nhau nua.
+    """
+    return report.latest_rows(Path(cfg.paths.statedir) / "runs")
 
 
 def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:

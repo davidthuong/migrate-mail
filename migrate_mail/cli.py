@@ -493,8 +493,17 @@ def _verify_one(cfg: Config, user: User, cap: int) -> verify.UserCheck:
         for folder, dest_name in pairs:
             fc = verify.FolderCheck(source_folder=folder.display, dest_folder=dest_name)
             try:
+                # Lay mau ben Gmail (dat: bi bop bang thong va bi dem lenh),
+                # nhung lay HET ben IceWarp (re: server nha, khong han muc).
+                #
+                # Truoc day lay mau ca hai dau voi cung `cap`. Hai folder gan
+                # nhu khong bao gio cung so luong, va thu tu cung khac nhau
+                # (IceWarp xep theo thu tu imapsync chep sang), nen hai mau
+                # roi vao hai tap mail khac nhau. Phan khong giao nhau bi tinh
+                # thanh "thieu ben dich" -- co lan bao thieu 504 mail tren mot
+                # hop thu ma imapsync da xac nhan la day du.
                 src_index, fc.source_total = verify.fetch_index(src_conn, folder.raw, cap)
-                dst_index, fc.dest_total = verify.fetch_index(dst_conn, dest_name, cap)
+                dst_index, fc.dest_total = verify.fetch_index(dst_conn, dest_name, 0)
             except Exception as exc:
                 fc.error = str(exc)
                 check.folders.append(fc)
@@ -524,55 +533,85 @@ def _fmt_epoch(epoch: float) -> str:
 def cmd_verify(args, cfg: Config) -> int:
     users = filter_users(load_users(args.users), args.only)
     cap = args.sample
-    say("Doi chieu ngay thang cua mail giua hai dau.")
-    say("Lay mau toi da %d mail moi folder. Sai lech duoi %ds coi nhu khop.\n"
-        % (cap, verify.TOLERANCE_SECONDS))
 
-    checks: List[verify.UserCheck] = []
-    with futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(users)))) as pool:
-        for check in pool.map(lambda u: _verify_one(cfg, u, cap), users):
-            checks.append(check)
-            if check.error:
-                say("LOI  %-32s %s" % (check.src_user, check.error))
-                continue
-            flag = "OK  " if check.ok else "LECH"
-            say("%s %-32s doi chieu %d mail, lech %d, thieu ben dich %d"
-                % (flag, check.src_user, check.compared, check.mismatched, check.missing))
-            for fc in check.folders:
-                if fc.error:
-                    say("       %-28s loi: %s" % (fc.source_folder, fc.error))
-                elif fc.mismatched:
-                    say("       %-28s %d/%d lech ngay"
-                        % (fc.source_folder, fc.mismatched, fc.compared))
-                    for msgid, src_e, dst_e in fc.samples:
-                        say("         %s" % msgid[:60])
-                        say("           Gmail  : %s" % _fmt_epoch(src_e))
-                        say("           IceWarp: %s" % _fmt_epoch(dst_e))
+    # verify la bang chung cuoi cung truoc cutover, nen phai luu lai duoc.
+    # Truoc day no chi in ra man hinh: chay bang `screen -dmS` roi mat phien
+    # la mat sach ket qua, trong khi `sync` thi ghi log tung mailbox tu dau.
+    logdir = Path(cfg.paths.logdir)
+    logdir.mkdir(parents=True, exist_ok=True)
+    logpath = logdir / ("verify-%s.txt" % time.strftime("%Y%m%d-%H%M%S"))
+    fh = logpath.open("w", encoding="utf-8", newline="\n")
 
-    total_cmp = sum(c.compared for c in checks)
-    total_bad = sum(c.mismatched for c in checks)
-    failed = [c for c in checks if not c.ok]
+    def out(line: str = "") -> None:
+        say(line)
+        fh.write(line + "\n")
+        fh.flush()          # xa ngay de `tail -f` doc duoc trong luc dang chay
 
-    say("")
-    if total_cmp == 0:
-        say("Khong doi chieu duoc mail nao. Da chay sync chua? Folder ben dich co ton tai khong?")
-        return 1
-    say("Ket qua: %d mail doi chieu, %d lech ngay (%.2f%%)."
-        % (total_cmp, total_bad, 100.0 * total_bad / total_cmp))
-    if total_bad:
+    try:
+        out("Doi chieu ngay thang cua mail giua hai dau.")
+        out("Lay mau toi da %d mail moi folder o ben Gmail, doi chieu voi toan "
+            "bo folder ben IceWarp." % cap)
+        out("Sai lech duoi %ds coi nhu khop.\n" % verify.TOLERANCE_SECONDS)
+
+        checks: List[verify.UserCheck] = []
+        with futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(users)))) as pool:
+            for check in pool.map(lambda u: _verify_one(cfg, u, cap), users):
+                checks.append(check)
+                if check.error:
+                    out("LOI  %-32s %s" % (check.src_user, check.error))
+                    continue
+                flag = "OK  " if check.ok else "LECH"
+                out("%s %-32s doi chieu %d mail, lech %d, thieu ben dich %d"
+                    % (flag, check.src_user, check.compared, check.mismatched,
+                       check.missing))
+                for fc in check.folders:
+                    if fc.error:
+                        out("       %-28s loi: %s" % (fc.source_folder, fc.error))
+                    elif fc.mismatched:
+                        out("       %-28s %d/%d lech ngay"
+                            % (fc.source_folder, fc.mismatched, fc.compared))
+                        for msgid, src_e, dst_e in fc.samples:
+                            out("         %s" % msgid[:60])
+                            out("           Gmail  : %s" % _fmt_epoch(src_e))
+                            out("           IceWarp: %s" % _fmt_epoch(dst_e))
+
+        total_cmp = sum(c.compared for c in checks)
+        total_bad = sum(c.mismatched for c in checks)
+        total_missing = sum(c.missing for c in checks)
+        failed = [c for c in checks if not c.ok]
+
+        out("")
+        if total_cmp == 0:
+            out("Khong doi chieu duoc mail nao. Da chay sync chua? Folder ben "
+                "dich co ton tai khong?")
+            return 1
+        out("Ket qua: %d mail doi chieu, %d lech ngay (%.2f%%)."
+            % (total_cmp, total_bad, 100.0 * total_bad / total_cmp))
+        if total_missing:
+            out("%d mail trong mau khong tim thay ben dich. Mot phan la mail von "
+                "khong co Message-Id (hay gap o Drafts) duoc --addheader gan cho "
+                "mot cai luc chep sang, nen hai dau khong ghep duoc. Con lai la "
+                "mail thieu that -- doi chieu voi dong 'Messages found in host1 "
+                "not in host2' o cuoi log sync, do la so dem day du chu khong "
+                "phai lay mau." % total_missing)
+        if total_bad:
+            out("")
+            out("Ngay KHONG duoc giu nguyen. Kiem tra theo thu tu nay:")
+            out("  1. Xem log sync co dong 'Info: turned ON syncinternaldates' khong.")
+            out("  2. Neu co ma van lech, IceWarp dang bo qua ngay trong lenh APPEND.")
+            out("     Doi date_source = header trong config.ini roi sync lai mailbox do")
+            out("     bang: ./mm.py sync --only <dia chi>")
+            out("  3. Neu van lech, hoi nha cung cap IceWarp ve viec server ghi de")
+            out("     INTERNALDATE luc APPEND.")
+        elif failed:
+            out("Ngay khop het, nhung co folder khong doi chieu duoc (xem o tren).")
+        else:
+            out("Ngay thang duoc giu nguyen tren toan bo mau kiem tra.")
+        return 0 if not failed else 1
+    finally:
+        fh.close()
         say("")
-        say("Ngay KHONG duoc giu nguyen. Kiem tra theo thu tu nay:")
-        say("  1. Xem log sync co dong 'Info: turned ON syncinternaldates' khong.")
-        say("  2. Neu co ma van lech, IceWarp dang bo qua ngay trong lenh APPEND.")
-        say("     Doi date_source = header trong config.ini roi sync lai mailbox do")
-        say("     bang: ./mm.py sync --only <dia chi>")
-        say("  3. Neu van lech, hoi nha cung cap IceWarp ve viec server ghi de")
-        say("     INTERNALDATE luc APPEND.")
-    elif failed:
-        say("Ngay khop het, nhung co folder khong doi chieu duoc (xem o tren).")
-    else:
-        say("Ngay thang duoc giu nguyen tren toan bo mau kiem tra.")
-    return 0 if not failed else 1
+        say("Da ghi %s" % logpath)
 
 
 # --------------------------------------------------------------------------- #
@@ -591,12 +630,25 @@ def cmd_report(args, cfg: Config) -> int:
             say("  %s" % r.name)
         return 0
 
-    target = runs_dir / args.run if args.run else runs[-1]
-    if not target.exists():
-        say("Khong thay %s" % target)
-        return 1
-    rows = report.refresh_hints(report.load_run(target))
-    say("Lan chay: %s\n" % target.name)
+    merged = report.latest_rows(runs_dir)
+    if args.all:
+        # Gop moi lan chay: dong moi nhat cua tung mailbox. Day moi la thu
+        # dung de bao cao toan bo cuoc migrate.
+        rows = report.refresh_hints(
+            sorted(merged.values(), key=lambda r: r.get("src_user", "")))
+        say("Gop %d mailbox tu %d lan chay da luu.\n" % (len(rows), len(runs)))
+    else:
+        target = runs_dir / args.run if args.run else runs[-1]
+        if not target.exists():
+            say("Khong thay %s" % target)
+            return 1
+        rows = report.refresh_hints(report.load_run(target))
+        say("Lan chay: %s\n" % target.name)
+        # Mot lan chay chi chua mailbox cua lan do. Rat de tuong nhan nham
+        # bao cao mot mailbox thanh bao cao ca cuoc migrate.
+        if len(rows) < len(merged):
+            say("Lan chay nay chi co %d/%d mailbox da tung chay. Dung --all "
+                "de gop tat ca.\n" % (len(rows), len(merged)))
     report.print_table(rows, emit=say)
     report.print_summary(rows, emit=say)
     if args.out:
@@ -673,6 +725,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     r = sub.add_parser("report", help="xem lai bao cao cua lan chay truoc")
     r.add_argument("--list", action="store_true", help="liet ke cac lan chay da luu")
+    r.add_argument("--all", action="store_true",
+                   help="gop tat ca lan chay: dong moi nhat cua tung mailbox. "
+                        "Dung cai nay khi bao cao ca cuoc migrate")
     r.add_argument("--run", default="", help="ten file run, vd 20260825-101500.json")
     r.add_argument("--out", default="", help="ghi ra file .csv hoac .html")
     r.set_defaults(func=cmd_report)

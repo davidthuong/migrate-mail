@@ -305,6 +305,20 @@ python3 mm.py verify
 khi sync xong mailbox đầu tiên — đừng đợi chuyển hết 20 hộp thư mới phát hiện
 ngày sai. Chi tiết ở mục dưới.
 
+Kết quả được ghi ra `logs/verify-<thời-điểm>.txt`, xả từng dòng nên `tail -f`
+đọc được trong lúc đang chạy.
+
+Bên Gmail lấy mẫu (đắt, bị bóp băng thông), bên IceWarp đọc **toàn bộ** folder
+(rẻ, server nhà). Lấy mẫu cả hai đầu là sai: hai folder gần như không bao giờ
+cùng số lượng và thứ tự cũng khác, nên hai mẫu rơi vào hai tập mail khác nhau
+và phần không giao nhau bị báo nhầm là thiếu.
+
+> Cột **`thiếu bên đích`** vẫn còn một phần dư giải thích được: mail vốn không
+> có `Message-Id` (hay gặp ở Drafts) được `--addheader` gắn cho một cái lúc
+> chép sang, nên hai đầu không ghép được. Con số đếm đủ và đáng tin về việc có
+> sót mail hay không nằm ở dòng `Messages found in host1 not in host2` cuối log
+> sync — imapsync đối chiếu từng mail chứ không lấy mẫu.
+
 ### 7. Cutover
 
 Ngày đổi MX, chạy vòng delta để nhặt mail mới về sau lần sync đầu:
@@ -471,9 +485,18 @@ Mỗi lần `sync` sinh ra:
 
 ```bash
 python3 mm.py report              # xem lại lần chạy gần nhất
+python3 mm.py report --all        # gộp tất cả: dòng mới nhất của từng mailbox
 python3 mm.py report --list       # liệt kê các lần đã chạy
-python3 mm.py report --out bao-cao.html
+python3 mm.py report --all --out bao-cao.html
 ```
+
+**Báo cáo cho sếp thì dùng `--all`.** Mỗi file run chỉ chứa những mailbox của
+lần chạy đó. Chạy rải rác vài đêm — 8 hộp một đêm, rồi từng hộp lẻ chạy lại —
+thì không file nào còn chứa đủ danh sách, và `report` không kèm `--all` sẽ ra
+một bảng đúng nhưng chỉ có một dòng. Khi điều đó xảy ra, tool tự nhắc.
+
+`--all` gộp theo cùng cách bảng trên dashboard vẫn gộp: lấy dòng mới nhất của
+từng địa chỉ qua tất cả các lần chạy.
 
 Mailbox lỗi sẽ kèm gợi ý xử lý cụ thể, không phải mã lỗi trần.
 

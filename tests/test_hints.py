@@ -301,3 +301,47 @@ class TestHintsRecomputedFromLog(unittest.TestCase):
         os.utime(str(quiet), (time.time() + 2, time.time() + 2))
         tips = report.hints_for_row(row(ket_qua="LOI", log=str(quiet)))
         self.assertTrue(any("15 ket noi" in t for t in tips), tips)
+
+
+class TestLatestRows(unittest.TestCase):
+    """Gop nhieu lan chay thanh trang thai hien tai cua tung mailbox.
+
+    Moi file run chi chua mailbox cua lan chay do. Sau vai dem chay rai rac,
+    khong file nao con chua du danh sach -- bao cao ca cuoc migrate thi phai
+    gop lai. Logic nay truoc kia chi co trong dashboard, nen lenh `report`
+    va dashboard bao cao lech nhau tren cung du lieu.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="mmruns-"))
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
+
+    def save(self, stamp, rows):
+        return report.save_run(rows, self.tmp / ("%s.json" % stamp))
+
+    def test_newer_run_wins(self):
+        self.save("20260101-000000", [row(src_user="a@x.com", ket_qua="LOI")])
+        self.save("20260102-000000", [row(src_user="a@x.com", ket_qua="OK")])
+        merged = report.latest_rows(self.tmp)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged["a@x.com"]["ket_qua"], "OK")
+
+    def test_mailboxes_from_different_runs_are_all_kept(self):
+        self.save("20260101-000000", [row(src_user="a@x.com")])
+        self.save("20260102-000000", [row(src_user="b@x.com")])
+        self.assertEqual(set(report.latest_rows(self.tmp)), {"a@x.com", "b@x.com"})
+
+    def test_non_sync_runs_are_ignored(self):
+        """Lan `--sizes` chi do dung luong, khong noi len trang thai chuyen."""
+        self.save("20260101-000000", [row(src_user="a@x.com", mode="sizes")])
+        self.assertEqual(report.latest_rows(self.tmp), {})
+
+    def test_missing_directory_is_empty(self):
+        self.assertEqual(report.latest_rows(self.tmp / "khong-co"), {})
+
+    def test_two_runs_in_the_same_second_do_not_overwrite(self):
+        """Dau thoi gian chi den giay, ma ten file quyet dinh lan nao moi hon."""
+        p1 = self.save("20260101-000000", [row(src_user="a@x.com", ket_qua="LOI")])
+        p2 = self.save("20260101-000000", [row(src_user="a@x.com", ket_qua="OK")])
+        self.assertNotEqual(p1, p2)
+        self.assertEqual(report.latest_rows(self.tmp)["a@x.com"]["ket_qua"], "OK")

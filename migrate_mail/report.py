@@ -161,6 +161,15 @@ def write_csv(rows: Sequence[Row], path: Path) -> Path:
 def save_run(rows: Sequence[Row], path: Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Dau thoi gian chi chi tiet den giay. Hai lan chay ket thuc trong cung
+    # mot giay se de len nhau va lam mat han mot lan chay khoi bao cao gop.
+    # Hau to dung '_' chu khong dung '-' hay '.': latest_rows sap xep theo ten
+    # file de biet lan nao moi hon, ma '_' (0x5F) lon hon '.' (0x2E) nen
+    # "...-000000_2.json" xep SAU "...-000000.json", dung thu tu thoi gian.
+    n = 2
+    while path.exists():
+        path = path.parent / ("%s_%d%s" % (path.stem.split("_")[0], n, path.suffix))
+        n += 1
     payload = {"generated_at": time.strftime("%Y-%m-%d %H:%M:%S"), "results": list(rows)}
     with path.open("w", encoding="utf-8", newline="\n") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
@@ -170,6 +179,32 @@ def save_run(rows: Sequence[Row], path: Path) -> Path:
 def load_run(path: Path) -> List[Row]:
     with Path(path).open(encoding="utf-8") as fh:
         return json.load(fh).get("results", [])
+
+
+def latest_rows(runs_dir) -> Dict[str, Row]:
+    """Ket qua gan nhat cua TUNG mailbox, gop tu moi lan chay da luu.
+
+    Mot file run chi chua nhung mailbox cua lan chay do. Sau vai dem chay rai
+    rac -- 8 hop mot dem, roi tung hop le chay lai -- khong file nao con chua
+    du danh sach. Muon nhin toan canh thi phai gop, lay dong moi nhat cua tung
+    dia chi.
+
+    Ham nay o day chu khong o web.py vi ca dashboard lan lenh `report` deu can:
+    truoc day chi dashboard co, nen hai ben bao cao ra hai ket qua khac nhau
+    tren cung mot du lieu.
+    """
+    runs_dir = Path(runs_dir)
+    out: Dict[str, Row] = {}
+    if not runs_dir.exists():
+        return out
+    for path in sorted(runs_dir.glob("*.json")):     # cu -> moi, ban sau de len
+        try:
+            for row in load_run(path):
+                if row.get("mode") in ("sync", "dry"):
+                    out[row.get("src_user", "")] = dict(row, run=path.stem)
+        except (OSError, ValueError):
+            continue
+    return out
 
 
 # --------------------------------------------------------------------------- #

@@ -261,6 +261,94 @@ class TestReport(CliTestCase):
         self.assertIn("an@moi.vn", html)
         self.assertNotIn("MatKhau", html)
 
+    # --- Bao cao ca cuoc migrate, khong phai mot lan chay ------------------
+    # Chay rai rac nhieu dem thi khong file run nao con chua du danh sach.
+    # Bao cao mac dinh chi doc lan chay cuoi, rat de tuong nham la toan bo.
+
+    def two_separate_runs(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync", "--only", "an@cu.com")
+            self.run_cli("sync", "--only", "binh@cu.com")
+
+    def test_all_merges_mailboxes_across_runs(self):
+        self.two_separate_runs()
+        code, out = self.run_cli("report", "--all")
+        self.assertEqual(code, 0, out)
+        self.assertIn("an@cu.com", out)
+        self.assertIn("binh@cu.com", out)
+
+    def test_plain_report_still_shows_only_the_last_run(self):
+        self.two_separate_runs()
+        code, out = self.run_cli("report")
+        self.assertEqual(code, 0, out)
+        self.assertIn("binh@cu.com", out)
+        self.assertNotIn("an@cu.com", out)
+
+    def test_plain_report_points_at_all_when_it_shows_fewer(self):
+        self.two_separate_runs()
+        _code, out = self.run_cli("report")
+        self.assertIn("Dung --all", out)
+
+    def test_no_pointer_when_the_run_already_covers_everyone(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            self.run_cli("sync")
+        _code, out = self.run_cli("report")
+        self.assertNotIn("--all", out)
+
+    def test_all_can_export_html(self):
+        self.two_separate_runs()
+        out_path = self.tmp / "gop.html"
+        code, _ = self.run_cli("report", "--all", "--out", str(out_path))
+        self.assertEqual(code, 0)
+        html = out_path.read_text(encoding="utf-8")
+        self.assertIn("an@cu.com", html)
+        self.assertIn("binh@cu.com", html)
+        self.assertNotIn("MatKhau", html)
+
+
+class TestVerifyCommand(CliTestCase):
+    """Buoc kiem chung cuoi cung truoc cutover."""
+
+    def run_verify(self, fetch_index, *extra):
+        conn = mock.MagicMock()
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
+             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+            return self.run_cli("verify", "--only", "an@cu.com", *extra)
+
+    def test_source_is_sampled_but_destination_is_read_in_full(self):
+        """Lay mau ca hai dau la sai: hai mau roi vao hai tap mail khac nhau.
+
+        Folder hai ben gan nhu khong bao gio cung so luong, va thu tu cung
+        khac (IceWarp xep theo thu tu imapsync chep sang). Phan khong giao
+        nhau bi tinh thanh "thieu ben dich" -- da tung bao thieu 504 mail
+        tren mot hop thu ma imapsync xac nhan la day du.
+        """
+        caps = []
+
+        def fake(conn, folder, cap):
+            caps.append(cap)
+            return {"<a@x>": 1000.0}, 1
+
+        _code, out = self.run_verify(fake, "--sample", "50")
+        self.assertTrue(caps, out)
+        self.assertEqual(set(caps), {50, 0})          # nguon 50, dich lay het
+        self.assertEqual(caps.count(50), caps.count(0))
+
+    def test_writes_a_log_file(self):
+        """Truoc day verify chi in ra man hinh: chay bang screen la mat ket qua."""
+        _code, out = self.run_verify(lambda c, f, cap: ({"<a@x>": 1000.0}, 1))
+        files = list((self.tmp / "logs").glob("verify-*.txt"))
+        self.assertEqual(len(files), 1, out)
+        text = files[0].read_text(encoding="utf-8")
+        self.assertIn("Doi chieu ngay thang", text)
+        self.assertIn("Ket qua:", text)
+        self.assertIn("Da ghi", out)
+
+    def test_log_is_written_even_when_nothing_could_be_compared(self):
+        _code, _out = self.run_verify(lambda c, f, cap: ({}, 0))
+        self.assertEqual(len(list((self.tmp / "logs").glob("verify-*.txt"))), 1)
+
 
 class TestConfigErrors(CliTestCase):
     def test_missing_config_is_reported_clearly(self):
