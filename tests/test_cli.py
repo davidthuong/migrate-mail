@@ -59,10 +59,24 @@ def quote(p):
     return '"%s"' % p if " " in str(p) else str(p)
 
 
+def no_dest_namespace(cfg, user, side, timeout=60):
+    """Ben dich khong co tien to namespace -- truong hop cua gan het server.
+
+    Phai gia lap: do namespace la mot lan dang nhap IMAP that su, va bo test
+    nay khong cham mang. Cac test co tien to that nam trong test_providers.
+    """
+    from migrate_mail.discover import Layout
+    return Layout()
+
+
 class CliTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        patcher = mock.patch("migrate_mail.discover.server_layout",
+                             side_effect=no_dest_namespace)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
         (self.tmp / "config.ini").write_text(
             CONFIG.format(imapsync=imapsync), encoding="utf-8")
@@ -398,6 +412,46 @@ class TestConfigErrors(CliTestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestDestinationPrefixIsVisible(CliTestCase):
+    """Tien to ben dich doi ten MOI folder, nen phai noi ra chu khong lam len.
+
+    Neu tool im lang, nguoi van hanh doc ke hoach o tren, thay "Sent", roi
+    di kiem tra "Sent" ben dich -- trong khi mail nam o "INBOX.Sent".
+    """
+
+    def discover(self, layout=None, error=None):
+        from migrate_mail.discover import DiscoveryError, Layout
+
+        def fake_layout(cfg, user, side, timeout=60):
+            if error:
+                raise DiscoveryError(error)
+            return layout or Layout()
+
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.discover.server_layout", side_effect=fake_layout):
+            return self.run_cli("discover", "--only", "an@cu.com")
+
+    def test_says_when_the_destination_has_a_prefix(self):
+        from migrate_mail.discover import Layout
+        code, out = self.discover(Layout(prefix="INBOX.", delim="."))
+        self.assertEqual(code, 0, out)
+        self.assertIn("INBOX.Sent", out)
+        self.assertIn("tien to 'INBOX.'", out)
+
+    def test_stays_quiet_when_there_is_no_prefix(self):
+        code, out = self.discover()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("tien to", out)
+        self.assertIn("-> Sent", out)
+
+    def test_warns_when_the_destination_cannot_be_read(self):
+        """Do khong duoc thi ke hoach o tren co the sai -- noi ro thay vi de
+        nguoi doc tuong da kiem tra ca hai dau."""
+        code, out = self.discover(error="login that bai")
+        self.assertEqual(code, 0, out)
+        self.assertIn("khong doc duoc namespace ben dich", out)
 
 
 class TestDiscoverDest(CliTestCase):

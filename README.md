@@ -1,35 +1,57 @@
 # migrate-mail
 
-Tool migrate mailbox từ **Google (Gmail / Workspace) sang IceWarp**, dựng trên nền
-[imapsync](https://github.com/imapsync/imapsync).
+Tool migrate mailbox **từ nhà cung cấp mail này sang nhà cung cấp khác**, dựng
+trên nền [imapsync](https://github.com/imapsync/imapsync).
+
+Nguồn được hỗ trợ sẵn: Gmail / Google Workspace, Microsoft 365 / Exchange
+Online, Exchange tự dựng, cPanel / DirectAdmin / Plesk (Dovecot), Courier,
+Zimbra, Yahoo, Zoho, iCloud, và IMAP chung cho những nơi còn lại. Đích mặc định
+là IceWarp, nhưng bất kỳ server IMAP nào cũng làm đích được.
 
 imapsync lo phần chuyển mail. Tool này lo phần còn lại: chạy nhiều mailbox song
-song, xử lý mấy cái quái của Gmail, che giấu mật khẩu, và cho ra báo cáo đọc được.
+song, xử lý cái quái riêng của từng nhà cung cấp, che giấu mật khẩu, và cho ra
+báo cáo đọc được.
 
 Chỉ dùng thư viện chuẩn của Python 3 — không cần `pip install` gì cả.
+
+```bash
+python3 mm.py providers          # xem danh sách nguồn và việc phải chuẩn bị
+python3 mm.py providers m365     # xem chi tiết một nguồn
+```
 
 ---
 
 ## Vì sao không gọi thẳng imapsync
 
-Ba thứ dễ làm hỏng một cuộc migrate Gmail, tool xử lý sẵn:
+Bốn thứ dễ làm hỏng một cuộc migrate, tool xử lý sẵn:
 
-**1. Gmail dùng label, không phải folder.** Một mail gắn 3 label sẽ xuất hiện ở 3
-nơi, và xuất hiện thêm lần nữa trong `All Mail`. Copy nguyên xi sang IceWarp sẽ
-làm dung lượng phình gấp mấy lần. Tool tự loại `All Mail`, `Important`, `Starred`.
+**1. Mỗi nguồn có folder không phải mail của riêng nó.** Gmail dùng label chứ
+không phải folder: một mail gắn 3 label xuất hiện ở 3 nơi, và thêm lần nữa trong
+`All Mail` — copy nguyên xi sẽ làm dung lượng phình gấp mấy lần. Exchange có
+`Outbox` và `Sync Issues`. Zimbra bày cả `Contacts`, `Calendar`, `Chats` ra
+đường IMAP. Tool biết folder nào của nhà cung cấp nào và bỏ qua chúng, có ghi rõ
+lý do trong `discover`.
 
-**2. Tên folder Gmail đổi theo ngôn ngữ account.** Cùng một hộp thư có thể là
-`[Gmail]/Sent Mail`, `[Gmail]/Thư đã gửi`, hay `[Gmail]/Gesendet`. Mọi hướng dẫn
-imapsync trên mạng đều hardcode tên tiếng Anh — gặp account tiếng Việt là im lặng
-copy nhầm `All Mail`. Tool đăng nhập IMAP trước, đọc cờ SPECIAL-USE
-(`\All`, `\Sent`, `\Drafts`, `\Trash`, `\Junk`) rồi mới dựng lệnh. Không đoán tên.
+**2. Tên folder đặc biệt thì mỗi nơi một kiểu, lại đổi theo ngôn ngữ account.**
+Cùng một hộp thư có thể gọi folder gửi đi là `[Gmail]/Sent Mail`,
+`[Gmail]/Thư đã gửi`, `Sent Items`, hay `INBOX.Sent`. Mọi hướng dẫn imapsync
+trên mạng đều hardcode tên tiếng Anh — gặp account tiếng Việt là im lặng copy
+nhầm. Tool đăng nhập IMAP trước, đọc cờ SPECIAL-USE (`\Sent`, `\Drafts`,
+`\Trash`, `\Junk`, `\Archive`) rồi mới dựng lệnh; server nào không gắn cờ
+(Courier, Exchange đời cũ) thì đối chiếu theo bảng tên của nhà cung cấp đó.
 
 Nếu không đọc được folder của một mailbox, tool **bỏ hẳn mailbox đó** chứ không
 chạy mù — chạy mù rủi ro hơn nhiều so với chạy thiếu.
 
-**3. Mật khẩu.** Tham số dòng lệnh hiện trong `ps aux` cho mọi user trên VPS.
-Tool ghi mật khẩu ra file tạm quyền `0600`, truyền qua `--passfile1/2`, và xoá
-sau khi chạy xong. Log ghi lại lệnh nhưng che đường dẫn passfile.
+**3. Cách đăng nhập không giống nhau.** Gmail/Yahoo/Zoho/iCloud bắt buộc app
+password. Microsoft 365 đã tắt basic auth trên phần lớn tenant — ở đó không có
+mật khẩu nào dùng được, phải đi bằng OAuth2 với một app đăng ký trên Entra ID.
+Tool tự lấy và làm mới token, không cần mật khẩu của từng user.
+
+**4. Mật khẩu.** Tham số dòng lệnh hiện trong `ps aux` cho mọi user trên VPS.
+Tool ghi mật khẩu (và access token) ra file tạm quyền `0600`, truyền qua
+`--passfile1/2` hoặc `--oauthaccesstoken1`, và xoá sau khi chạy xong. Log ghi
+lại lệnh nhưng che đường dẫn các file đó.
 
 ---
 
@@ -59,7 +81,20 @@ sudo IMAPSYNC_REF=v2.290 ./install.sh
 
 ---
 
-## Chuẩn bị phía Google
+## Chuẩn bị phía nguồn
+
+Khai báo nguồn trong `config.ini`:
+
+```ini
+[source]
+provider = gmail        ; hoặc m365, dovecot, zimbra, courier, yahoo, zoho, icloud, exchange, imap
+```
+
+`provider` quyết định ba thứ: host mặc định, cách nhận ra folder đặc biệt, và
+folder nào không phải mail nên bỏ qua. Chạy `python3 mm.py providers <tên>` để
+xem việc phải chuẩn bị cho từng nguồn. Dưới đây là phần cần đọc kỹ.
+
+### Gmail / Google Workspace
 
 Mỗi mailbox cần một **App Password 16 ký tự** — không dùng được mật khẩu đăng nhập.
 
@@ -73,14 +108,132 @@ Mỗi mailbox cần một **App Password 16 ký tự** — không dùng được
 Google hiển thị password dạng `abcd efgh ijkl mnop`. Dán vào CSV kèm khoảng trắng
 cũng được, tool tự bỏ.
 
-## Chuẩn bị phía IceWarp
+### Microsoft 365 / Exchange Online
+
+Phần lớn tenant đã tắt basic auth. Ở đó **không có mật khẩu nào đăng nhập IMAP
+được** — kể cả mật khẩu đúng. Đường còn lại là OAuth2 app-only: đăng ký một ứng
+dụng, cho nó quyền đọc mailbox toàn tenant, rồi tool dùng token của ứng dụng đó
+để đăng nhập thay từng mailbox. **Không cần thu mật khẩu của nhân viên khách
+hàng** — thực tế đây mới là thứ làm việc migrate khả thi.
+
+Khách hàng (admin của tenant nguồn) làm bốn bước:
+
+1. **Entra ID → App registrations → New registration.** Ghi lại
+   *Application (client) ID* và *Directory (tenant) ID*.
+2. **API permissions → APIs my organization uses → Office 365 Exchange Online →
+   Application permissions → `IMAP.AccessAsApp` → Add**, rồi bấm
+   **Grant admin consent**.
+3. **Certificates & secrets → New client secret.** Copy giá trị ngay, sau này
+   không xem lại được.
+4. Trong **Exchange Online PowerShell**, đăng ký service principal cho app đó:
+
+   ```powershell
+   New-ServicePrincipal -AppId <client-id> -ServiceId <object-id-cua-service-principal>
+   ```
+
+   Thiếu bước này thì token lấy về vẫn hợp lệ nhưng IMAP trả `AUTHENTICATE failed`
+   — đây là chỗ hay tắc nhất.
+
+Ngoài ra IMAP phải được bật cho từng mailbox:
+
+```powershell
+Set-CASMailbox -Identity user@contoso.com -ImapEnabled $true
+```
+
+Rồi khai vào `config.ini`:
+
+```ini
+[source]
+provider = m365
+auth = oauth2
+oauth_tenant    = contoso.onmicrosoft.com
+oauth_client_id = 00000000-0000-0000-0000-000000000000
+oauth_client_secret_file = oauth-secret.txt
+```
+
+Để secret ra file riêng (`chmod 600`) thì `config.ini` vẫn còn backup/gửi đi
+được. Cột `src_password` trong `users.csv` khi đó **để trống**.
+
+`python3 mm.py doctor` sẽ thật sự gọi Microsoft xin token và in mã `AADSTS` nếu
+bị từ chối — đó là cách nhanh nhất biết secret hết hạn hay thiếu consent.
+
+> OAuth2 cần **imapsync 2.251 trở lên**. Tuỳ chọn `--oauthaccesstoken1` có
+> từ 2.113, nhưng trước 2.251 imapsync vẫn đòi có `--password1` đi kèm nên
+> không dùng một mình được. `doctor` kiểm tra và báo nếu bản đang cài quá cũ.
+>
+> Tool ghi token ra file rồi truyền đường dẫn file đó (không truyền token
+> thẳng trên dòng lệnh). imapsync đọc lại file mỗi lần nó kết nối lại giữa
+> chừng, nên trong suốt lần chạy tool giữ cho file đó luôn còn hạn — hộp thư
+> chạy mười mấy tiếng cũng không đứt vì token hết hạn.
+
+Tenant nào còn bật basic auth thì cứ để `auth = password` và điền mật khẩu như
+bình thường.
+
+### cPanel / DirectAdmin / Plesk (Dovecot), Courier
+
+Hosting kiểu Maildir++ để mọi folder dưới tiền tố `INBOX.` với dấu phân cách là
+`.`. Tool đọc lệnh `NAMESPACE` của **cả hai đầu**: tiền tố bên nguồn bị cắt đi,
+tiền tố bên đích được thêm vào, và dấu phân cách được đổi theo. Không làm thế
+thì hoặc hộp thư mới mọc ra một folder `INBOX` chứa tất cả, hoặc mọi folder bị
+kéo ra ngoài INBOX.
+
+Đây là việc **không thể phó mặc cho imapsync**: nó chỉ tự đổi tiền tố và dấu
+phân cách cho những folder nó tự suy ra tên. Tên nào đi qua `--f1f2` thì nó lấy
+nguyên văn (`sub imap2_folder_name` trả về trước khi gọi
+`prefix_seperator_invertion`) — mà tool này ánh xạ tường minh gần như mọi folder.
+
+Muốn ghi đè thì đặt `prefix` trong `[source]` hoặc `[dest]`: `auto` (mặc định),
+`none`, hoặc một tiền tố viết cứng như `INBOX.` cho server trả về `NAMESPACE` sai.
+
+Cái chặn thường gặp là `mail_max_userip_connections` của Dovecot (mặc định 10):
+vượt là server từ chối kết nối mới. Giảm `workers` hoặc nâng giới hạn đó.
+
+Courier không quảng bá SPECIAL-USE, nên folder đặc biệt được nhận ra **theo
+tên**. Chạy `discover` kiểm lại trước khi sync thật.
+
+### Zimbra
+
+Bật IMAP trong COS (`zimbraImapEnabled = TRUE`). Zimbra bày cả `Contacts`,
+`Emailed Contacts`, `Calendar`, `Tasks`, `Chats`, `Briefcase` ra đường IMAP —
+tool tự bỏ qua chúng.
+
+### Yahoo / Zoho / iCloud
+
+Đều bắt buộc app-specific password, tạo trong phần bảo mật của account. Zoho còn
+phải bật IMAP trong **Settings → Mail Accounts → IMAP Access**, và account ở
+châu Âu dùng `imap.zoho.eu`.
+
+### Nguồn không có trong danh sách
+
+```ini
+[source]
+provider = imap
+host = mail.khachhang.vn
+```
+
+Tool vẫn đọc cờ SPECIAL-USE và đối chiếu bảng tên tiếng Anh + tiếng Việt. Chạy
+`discover` để xem nó phân loại đúng chưa trước khi chạy thật.
+
+## Chuẩn bị phía đích
+
+```ini
+[dest]
+provider = icewarp
+host = mail.congty.vn
+```
+
+`provider` bên đích quyết định tên folder mặc định (IceWarp gọi folder rác là
+`Spam`, Exchange gọi là `Junk Email`, Dovecot gọi là `Junk`) và bộ gợi ý xử lý
+lỗi khi ghi mail vào.
 
 - Tạo sẵn toàn bộ tài khoản đích trước khi chạy.
-- Đặt quota đủ lớn. Ước lượng bằng dung lượng Gmail của user, cộng thêm ~20% dự phòng.
-- Kiểm tra giới hạn kích thước mail của IceWarp. Nếu Gmail có mail lớn hơn giới
-  hạn đó, đặt `maxsize` trong `config.ini` để bỏ qua chúng — nếu không imapsync
-  sẽ báo lỗi từng cái một cho tới khi chạm `errorsmax` và dừng cả mailbox.
+- Đặt quota đủ lớn. Ước lượng bằng dung lượng bên nguồn, cộng thêm ~20% dự phòng.
+- Kiểm tra giới hạn kích thước mail của server đích. Nếu nguồn có mail lớn hơn
+  giới hạn đó, đặt `maxsize` trong `config.ini` để bỏ qua chúng — nếu không
+  imapsync sẽ báo lỗi từng cái một cho tới khi chạm `errorsmax` và dừng cả mailbox.
 - Mở port 993 từ IP của VPS.
+- Server đích để folder dưới tiền tố Maildir++ (`INBOX.`) thì tool tự dò và tự
+  thêm vào — không phải khai gì. `discover` in ra tiền tố nó thấy được.
 
 ---
 
@@ -96,11 +249,14 @@ chmod 600 users.csv
 
 ```csv
 src_user,src_password,dst_user,dst_password
-an.nguyen@congty-cu.com,abcd efgh ijkl mnop,an.nguyen@congty.vn,MatKhauIceWarp1
+an.nguyen@congty-cu.com,abcd efgh ijkl mnop,an.nguyen@congty.vn,MatKhauDich1
 ```
 
-`config.ini` — ít nhất phải sửa `[dest] host`. Mọi tuỳ chọn đều có chú thích
-trong `config.example.ini`.
+Nguồn chạy `auth = oauth2` thì cột `src_password` để trống — không ai có mật
+khẩu của user, và tool cũng không cần.
+
+`config.ini` — ít nhất phải sửa `[source] provider` và `[dest] host`. Mọi tuỳ
+chọn đều có chú thích trong `config.example.ini`.
 
 > `config.ini` và `users.csv` đã nằm trong `.gitignore`. Đừng commit chúng.
 
@@ -111,6 +267,10 @@ trong `config.example.ini`.
 Đừng chạy cả danh sách ngay lần đầu. Cho đủ 20 dòng vào `users.csv`, rồi dùng
 `--only` để chỉ đụng vào một hộp thư.
 
+> Phần này và phần **Quy trình chạy** bên dưới lấy Gmail → IceWarp làm ví dụ cụ
+> thể vì đó là cặp hay gặp nhất. Các bước y hệt nhau với mọi cặp nguồn/đích
+> khác; chỗ nào ghi "Gmail" hay "IceWarp" thì thay bằng nhà cung cấp của bạn.
+
 **Chọn hộp thư nào:** một hộp **nhỏ** (vài trăm MB, để vòng thử xong trong nửa
 tiếng chứ không phải nửa ngày) và có đủ Sent, Drafts, vài label lồng nhau — như
 vậy mới kiểm được phần đổi tên folder.
@@ -120,8 +280,8 @@ U=an.nguyen@congty-cu.com
 
 python3 mm.py doctor                      # 1. môi trường
 python3 mm.py preflight --only $U         # 2. đăng nhập được cả hai đầu
-python3 mm.py discover  --only $U         # 3. folder Gmail + kế hoạch chuyển
-python3 mm.py discover  --dest --only $U  # 4. folder thật bên IceWarp
+python3 mm.py discover  --only $U         # 3. folder bên nguồn + kế hoạch chuyển
+python3 mm.py discover  --dest --only $U  # 4. folder thật bên đích
 python3 mm.py sync --sizes --only $U       # 5. đo dung lượng, ước lượng số ngày
 python3 mm.py sync --folders-only --only $U   # 6. tạo cây folder, chưa chuyển mail
 python3 mm.py sync --dry --only $U        # 7. chạy khan, không ghi gì
@@ -145,7 +305,7 @@ nhi.tran@namphonggroup.com             49.751      22.8 GB        40.7 MB       
 ```
 
 Chạy bước này cho **toàn bộ mailbox** ngay từ đầu để biết tổng khối lượng và
-kiểm tra cột *Mail lớn nhất* có vượt giới hạn của IceWarp không.
+kiểm tra cột *Mail lớn nhất* có vượt giới hạn của server đích không.
 
 > **Cột "Ngày tối đa" là trần trên, không phải dự báo.** Nó tính theo hạn mức
 > 2500 MB/ngày Google công bố. Thực tế đã gặp account Workspace tải liền mạch
@@ -183,7 +343,7 @@ hai bộ folder. Cách chắc ăn: đăng nhập WebClient bằng tài khoản �
 một mail thử, lưu một draft, xoá một mail — rồi chạy lại `discover --dest` để
 xem tên thật IceWarp đặt, và sửa `config.ini` cho khớp.
 
-### Nhiều folder Gmail đổ chung vào một folder đích
+### Nhiều folder nguồn đổ chung vào một folder đích
 
 `discover` còn cảnh báo khi hai folder nguồn cùng ra một tên đích:
 
@@ -192,9 +352,9 @@ xem tên thật IceWarp đặt, và sửa `config.ini` cho khớp.
   Drafts  <-  [Gmail]/Thư nháp, Drafts
 ```
 
-Rất hay gặp với hộp thư **trước đây đã import từ Outlook vào Gmail**: bên cạnh
-folder chuẩn của Gmail còn sót lại label cũ cùng công dụng (`Drafts`,
-`Sent Items`, `Khác`, `Ưu tiên`...). Cả hai sẽ trộn làm một bên IceWarp.
+Rất hay gặp với hộp thư **trước đây đã import từ nơi khác**: bên cạnh folder
+chuẩn của nhà cung cấp hiện tại còn sót lại folder cũ cùng công dụng (`Drafts`,
+`Sent Items`...). Cả hai sẽ trộn làm một bên đích.
 
 Không mất mail, nhưng nên là quyết định có ý thức. Muốn giữ riêng thì đổi tên
 label cũ trong `config.ini`:
@@ -203,7 +363,7 @@ label cũ trong `config.ini`:
 extra_args = --regextrans2 s,^Drafts$,Drafts-cu,
 ```
 
-Hoặc đổi tên đích của folder Gmail: `drafts_folder = Drafts-gmail`.
+Hoặc đổi tên đích của folder đặc biệt: `drafts_folder = Drafts-nguon`.
 
 ### Kiểm bằng mắt sau khi xong
 
@@ -254,7 +414,7 @@ lúc 2 giờ sáng.
 python3 mm.py preflight
 ```
 
-Đăng nhập IMAP cả Gmail lẫn IceWarp cho từng dòng trong CSV. Đây là bước bắt lỗi
+Đăng nhập IMAP cả hai đầu cho từng dòng trong CSV. Đây là bước bắt lỗi
 sai mật khẩu, thiếu tài khoản, sai domain — rẻ và nhanh. Chạy nó trước.
 
 ### 3. `discover` — xem kế hoạch chuyển đổi
@@ -264,10 +424,10 @@ python3 mm.py discover
 ```
 
 In ra folder nào bị **bỏ qua**, folder nào **đổi tên**, folder nào **giữ nguyên**,
-cho từng mailbox. Đọc kỹ phần "BỎ QUA" — đó là những gì sẽ không sang IceWarp.
+cho từng mailbox. Đọc kỹ phần "BỎ QUA" — đó là những gì sẽ không sang bên đích.
 
-Thêm `--dest` để xem folder có sẵn bên IceWarp thay vì bên Gmail. Lệnh này cảnh
-báo khi tên trong `config.ini` không khớp tên thật của IceWarp — nếu bỏ qua,
+Thêm `--dest` để xem folder có sẵn bên đích thay vì bên nguồn. Lệnh này cảnh
+báo khi tên trong `config.ini` không khớp tên thật bên đích — nếu bỏ qua,
 hộp thư sẽ có hai folder cùng công dụng nhưng khác tên.
 
 ### 4. `sync --dry` — chạy thử
@@ -276,7 +436,7 @@ hộp thư sẽ có hai folder cùng công dụng nhưng khác tên.
 python3 mm.py sync --dry
 ```
 
-imapsync duyệt hết mọi thứ nhưng không ghi gì vào IceWarp. Xác nhận số lượng mail
+imapsync duyệt hết mọi thứ nhưng không ghi gì vào server đích. Xác nhận số lượng mail
 khớp với mong đợi trước khi chạy thật.
 
 ### 5. `sync` — chạy thật
@@ -308,7 +468,7 @@ ngày sai. Chi tiết ở mục dưới.
 Kết quả được ghi ra `logs/verify-<thời-điểm>.txt`, xả từng dòng nên `tail -f`
 đọc được trong lúc đang chạy.
 
-Bên Gmail lấy mẫu (đắt, bị bóp băng thông), bên IceWarp đọc **toàn bộ** folder
+Bên nguồn lấy mẫu (đắt, có thể bị bóp băng thông), bên đích đọc **toàn bộ** folder
 (rẻ, server nhà). Lấy mẫu cả hai đầu là sai: hai folder gần như không bao giờ
 cùng số lượng và thứ tự cũng khác, nên hai mẫu rơi vào hai tập mail khác nhau
 và phần không giao nhau bị báo nhầm là thiếu.
@@ -396,7 +556,22 @@ hỏi nhà cung cấp — không có tham số imapsync nào chữa được.
 
 ---
 
-## Giới hạn của Gmail — cái này quyết định lịch chạy
+## Hạn mức của nguồn — cái này quyết định lịch chạy
+
+Hai loại hạn mức hoàn toàn khác nhau, và nhầm chúng với nhau sẽ dẫn tới xử lý sai:
+
+| Nguồn | Loại giới hạn | Gặp thì làm gì |
+|---|---|---|
+| Gmail / Workspace | **Dung lượng/ngày** — 2500 MB công bố cho mỗi account | Chờ reset (1–24h) rồi chạy lại |
+| Microsoft 365 | **Throttling tức thời** — `Server Unavailable`, không có hạn mức ngày | Giảm `workers` xuống 2–3, chạy tiếp ngay |
+| Dovecot / cPanel | **Số kết nối đồng thời** — `mail_max_userip_connections`, mặc định 10 | Giảm `workers` hoặc nâng giới hạn trên server |
+| Zimbra, Courier, IMAP chung | Tuỳ cấu hình server | Xem log, giảm `workers` |
+
+Chỉ Gmail mới có "còn bao nhiêu ngày nữa", nên cột **Ngày tối đa** của
+`sync --sizes` chỉ xuất hiện khi nguồn là Gmail. Với nguồn khác, con số đó không
+tồn tại và tool không bịa ra.
+
+Phần còn lại của mục này nói riêng về Gmail.
 
 Google **công bố** giới hạn 2500 MB/ngày cho mỗi account qua IMAP download.
 Vượt thì account bị khoá IMAP, thường 1 giờ, có thể tới 24 giờ.
@@ -528,11 +703,16 @@ chạy cũ mất gợi ý (số liệu vẫn còn), và tool quay về dùng g�
 ## Các lệnh khác
 
 ```bash
+python3 mm.py providers                            # nguồn/đích được hỗ trợ
+python3 mm.py providers dovecot                    # chi tiết một cái
 python3 mm.py sync --only an@cu.com,binh@cu.com   # chỉ vài mailbox
 python3 mm.py sync --resume                        # bỏ qua mailbox đã xong
 python3 mm.py sync --workers 5                     # ghi đè số luồng song song
 python3 mm.py sync --since-days 3                  # chỉ mail mới hơn 3 ngày
 ```
+
+`providers` chạy được cả khi chưa có `config.ini` — cần biết điền gì vào
+`provider =` trước đã.
 
 `--resume` dựa vào file đánh dấu trong `state/<user>/done.marker`. Muốn ép chạy
 lại một mailbox thì xoá file đó đi.
@@ -541,20 +721,52 @@ lại một mailbox thì xoá file đó đi.
 
 ## Xử lý sự cố
 
-Tool tự dịch các lỗi hay gặp thành việc cần làm. Bảng dưới là để tra nhanh:
+Tool tự dịch các lỗi hay gặp thành việc cần làm, **theo đúng nhà cung cấp đang
+chạy** — báo "dùng App Password của Google" cho một ca migrate từ Zimbra không
+chỉ vô dụng, nó làm người trực đi sai hướng đúng lúc đang gặp sự cố. Bảng dưới
+là để tra nhanh:
+
+Chung cho mọi nguồn:
 
 | Triệu chứng | Nguyên nhân |
 |---|---|
-| `Invalid credentials` phía Gmail | Đang dùng mật khẩu thường thay vì App Password |
+| `[OVERQUOTA]` lúc ghi sang đích | Hộp thư đích đầy |
+| `Message too big` | Vượt giới hạn kích thước của server đích; đặt `maxsize` |
+| `[TRYCREATE]` | Không tạo được folder bên đích — với IceWarp thường do trùng tên với folder PIM (Contacts, Calendar, Tasks, Notes) |
+| `certificate verify failed` | Chứng chỉ TLS sai tên miền hoặc hết hạn |
+| `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
+| `Unknown option` | imapsync quá cũ so với tuỳ chọn tool dùng; chạy `doctor` |
+
+Gmail:
+
+| Triệu chứng | Nguyên nhân |
+|---|---|
+| `Invalid credentials` | Đang dùng mật khẩu thường thay vì App Password |
 | `Application-specific password required` | Account bật 2FA, phải dùng App Password |
 | `Web login required` | Google chặn; đăng nhập Gmail bằng trình duyệt một lần rồi thử lại |
-| `Bandwidth limit` / `[LIMIT]` | Gmail chặn vì vượt hạn mức IMAP; chờ reset rồi chạy lại |
+| `Bandwidth limit` / `[LIMIT]` | Vượt hạn mức IMAP; chờ reset rồi chạy lại |
 | `Too many simultaneous connections` | Quá 15 kết nối trên một account; giảm `workers` |
-| `[OVERQUOTA]` kèm `could not be fetched` | Là hạn mức **Gmail**, không phải IceWarp — xem mục giới hạn ở trên |
-| `[OVERQUOTA]` lúc ghi sang đích | Hộp thư IceWarp đầy |
-| `Message too big` | Vượt giới hạn kích thước của IceWarp; đặt `maxsize` |
-| `[TRYCREATE]` | Không tạo được folder bên IceWarp — thường do trùng tên với folder PIM (Contacts, Calendar, Tasks, Notes) |
-| `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
+| `[OVERQUOTA]` kèm `could not be fetched` | Là hạn mức **Gmail**, không phải server đích — xem mục hạn mức ở trên |
+
+Microsoft 365:
+
+| Triệu chứng | Nguyên nhân |
+|---|---|
+| `basic authentication is disabled` | Tenant đã tắt basic auth; chuyển sang `auth = oauth2` |
+| `AADSTS7000215` | Client secret sai hoặc đã hết hạn |
+| `AADSTS700016` | Client ID không tồn tại trong tenant đó |
+| `AADSTS900023` | Sai `oauth_tenant` |
+| `AUTHENTICATE failed` dù token lấy được | Chưa chạy `New-ServicePrincipal`, hoặc chưa admin consent `IMAP.AccessAsApp` |
+| `IMAP4 protocol is disabled` | Chưa `Set-CASMailbox -ImapEnabled $true` cho mailbox đó |
+| `Server Unavailable` | Throttling — giảm `workers`, **không phải** hạn mức ngày, không cần chờ |
+
+Dovecot / cPanel / Courier / Zimbra:
+
+| Triệu chứng | Nguyên nhân |
+|---|---|
+| `Maximum number of connections ... exceeded` | `mail_max_userip_connections`; giảm `workers` hoặc nâng giới hạn |
+| `Invalid credentials` | Một số hosting dùng tên đăng nhập dạng `user_domain` chứ không phải `user@domain` |
+| Folder bên đích mọc ra một cây `INBOX` lồng nhau, hoặc nằm ngoài INBOX | Tiền tố namespace dò sai; đặt `prefix` tường minh trong `[source]`/`[dest]` |
 
 Nếu cần đào sâu, xem file log của mailbox đó — nó chứa nguyên văn output imapsync.
 Muốn chi tiết hơn nữa, thêm vào `config.ini`:
@@ -563,7 +775,7 @@ Muốn chi tiết hơn nữa, thêm vào `config.ini`:
 extra_args = --debugimap
 ```
 
-### Folder bị đặt tên lạ ở IceWarp
+### Folder bị đặt tên lạ bên đích
 
 Nếu tên folder dịch chưa vừa ý, dùng `--regextrans2` của imapsync qua `extra_args`.
 Ví dụ dồn mọi label vào một cây `Gmail/`:
@@ -579,9 +791,11 @@ extra_args = --regextrans2 s,^(?!INBOX|Sent|Drafts|Trash|Spam),Gmail/$1,
 ```
 mm.py                      điểm vào
 migrate_mail/
+  providers.py             hồ sơ từng nhà cung cấp: folder, hạn mức, chuẩn bị
+  oauth.py                 lấy và làm mới OAuth2 token của Microsoft
   config.py                đọc config.ini
   users.py                 đọc users.csv, chuẩn hoá app password
-  discover.py              đọc folder Gmail, dựng kế hoạch chuyển đổi
+  discover.py              đọc folder bên nguồn, dựng kế hoạch chuyển đổi
   imaputf7.py              giải mã tên folder để hiển thị
   runner.py                dựng và chạy lệnh imapsync, đọc kết quả
   hints.py                 dịch lỗi imapsync thành việc cần làm
@@ -590,9 +804,14 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     210 test, không chạm mạng
+tests/                     357 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
+
+**Thêm một nguồn mới** là thêm một `Provider` vào `providers.py` — khai báo host
+mặc định, bảng tên folder, folder cần bỏ qua, hạn mức, và các bước chuẩn bị.
+Không phải sửa logic ở chỗ nào khác. `tests/test_providers.py` có một test dựng
+provider ngay trong test để chứng minh điều đó.
 
 Chạy test:
 
@@ -609,7 +828,11 @@ không cần mạng và không cần tài khoản thật.
 
 - imapsync là phần mềm tự do (giấy phép NOLIMIT); tác giả có bán bản build sẵn
   và dịch vụ hỗ trợ. `install.sh` lấy mã nguồn từ repo GitHub chính thức.
-- Tool này chỉ chuyển **mail**. Lịch, danh bạ, task của Google không đi qua IMAP —
-  phải export/import riêng.
-- Bộ lọc, chữ ký, chuyển tiếp bên Gmail cũng không được chuyển; phải tạo lại
-  thủ công trên IceWarp.
+- Tool này chỉ chuyển **mail**. Lịch, danh bạ, task không đi qua IMAP — phải
+  export/import riêng. Với Zimbra thì các folder đó *có* hiện trên IMAP nhưng
+  nội dung không dùng được bên đích, nên tool bỏ qua chúng.
+- Bộ lọc, chữ ký, chuyển tiếp bên nguồn cũng không được chuyển; phải tạo lại
+  thủ công trên server đích.
+- `auth = master` (đăng nhập bằng tài khoản quản trị: Dovecot master user,
+  Zimbra admin) đã có chỗ trong `config.ini` nhưng **chưa được hiện thực** —
+  đặt giá trị đó sẽ báo lỗi ngay lúc đọc config chứ không hỏng giữa chừng.

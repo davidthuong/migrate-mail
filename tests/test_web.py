@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE))
 from migrate_mail import web
 from migrate_mail.config import load_config
 
-from test_cli import CONFIG, USERS, quote
+from test_cli import CONFIG, USERS, no_dest_namespace, quote
 from test_discover import GMAIL_EN, parse
 
 FAKE = HERE / "fake_imapsync.py"
@@ -42,6 +42,10 @@ class WebTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="mmweb-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        patcher = mock.patch("migrate_mail.discover.server_layout",
+                             side_effect=no_dest_namespace)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
         (self.tmp / "config.ini").write_text(
             CONFIG.format(imapsync=imapsync), encoding="utf-8")

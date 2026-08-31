@@ -22,7 +22,12 @@ Row = Dict[str, str]
 
 FIELDS = ["src_user", "dst_user", "ket_qua", "folder", "mail_chuyen", "mail_bo_qua",
           "bytes", "dung_luong", "loi", "thoi_gian", "duration_sec", "exit",
-          "ghi_chu", "goi_y", "log", "mode"]
+          "ghi_chu", "goi_y", "log", "mode",
+          # Provider cua lan chay do. Can luu lai vi goi y duoc TINH LAI tu log
+          # moi lan xem bao cao: khong co hai truong nay thi khong biet log kia
+          # la cua Gmail hay cua Exchange, va se dua ra goi y cua nha cung cap
+          # khac. Dong cu (truoc khi co da provider) khong co -> de trong.
+          "src_provider", "dst_provider"]
 
 
 def human_bytes(n) -> str:
@@ -65,10 +70,14 @@ def _int(row: Row, key: str) -> int:
         return 0
 
 
-def rows_from_results(results: Sequence) -> List[Row]:
+def rows_from_results(results: Sequence, cfg=None) -> List[Row]:
+    src_provider = cfg.source.provider.key if cfg else ""
+    dst_provider = cfg.dest.provider.key if cfg else ""
     out = []
     for r in results:
         out.append({
+            "src_provider": src_provider,
+            "dst_provider": dst_provider,
             "src_user": r.user.src_user,
             "dst_user": r.user.dst_user,
             "ket_qua": "OK" if r.ok else "LOI",
@@ -221,7 +230,7 @@ def merged_rows(runs_dir) -> List[Row]:
     la tinh hinh hien tai. Nhung khoi luong (mail, dung luong, thoi gian) thi
     CONG DON qua moi lan chay sync.
 
-    Vi sao phai cong don: mot hop thu bi Gmail cat giua chung roi chay lai da
+    Vi sao phai cong don: mot hop thu bi nguon cat giua chung roi chay lai da
     chuyen mail o ca hai lan, nhung moi dong chi mang thong ke cua rieng lan
     do ("Messages transferred" cua imapsync). Lay lan cuoi lam bao cao la ke
     thieu cong cua chinh minh -- co lan bao 87.936 mail trong khi thuc te da
@@ -304,7 +313,8 @@ def log_tail(path, limit: int = _TAIL_BYTES) -> str:
     return text
 
 
-def hints_from_log(logpath: str) -> Optional[List[str]]:
+def hints_from_log(logpath: str, source: Optional[str] = None,
+                   dest: Optional[str] = None) -> Optional[List[str]]:
     """Goi y tinh lai tu log. None neu khong con doc duoc log."""
     if not logpath:
         return None
@@ -313,12 +323,12 @@ def hints_from_log(logpath: str) -> Optional[List[str]]:
         st = p.stat()
     except OSError:
         return None
-    key, stamp = str(p), (st.st_size, st.st_mtime)
+    key, stamp = (str(p), source, dest), (st.st_size, st.st_mtime)
     cached = _hint_cache.get(key)
     if cached and cached[0] == stamp:
         return cached[1]
     try:
-        tips = diagnose(log_tail(p))
+        tips = diagnose(log_tail(p), source=source, dest=dest)
     except OSError:
         return None
     if len(_hint_cache) > 200:            # chay lau ngay thi dung phinh mai
@@ -336,7 +346,9 @@ def hints_for_row(row: Row) -> List[str]:
     stored = [t for t in (row.get("goi_y") or "").split(" | ") if t]
     if row.get("ket_qua") != "LOI":
         return stored
-    tips = hints_from_log(row.get("log", ""))
+    tips = hints_from_log(row.get("log", ""),
+                          row.get("src_provider") or None,
+                          row.get("dst_provider") or None)
     return stored if tips is None else tips
 
 
@@ -361,6 +373,27 @@ _HTML_HEAD = """<meta charset="utf-8">
  .totals{margin-top:1rem;padding:.7rem 1rem;background:#f6f7f9;border-radius:6px}
 </style>
 """
+
+
+def _html_title(rows: Sequence[Row]) -> str:
+    """": Gmail -> IceWarp" neu moi dong cung mot cap provider, khong thi rong.
+
+    Bao cao gop (`report --all`) co the tron nhieu cuoc migrate khac nhau; khi
+    do de tieu de trung tinh con hon ghi ten mot cap va noi sai ve phan con lai.
+    """
+    from . import providers
+    pairs = {(r.get("src_provider") or "", r.get("dst_provider") or "")
+             for r in rows}
+    if len(pairs) != 1:
+        return ""
+    src, dst = pairs.pop()
+    if not src or not dst:
+        return ""
+    try:
+        return ": %s &rarr; %s" % (html.escape(providers.get(src).name),
+                                   html.escape(providers.get(dst).name))
+    except ValueError:
+        return ""
 
 
 def write_html(rows: Sequence[Row], path: Path, note_text: str = "") -> Path:
@@ -396,7 +429,7 @@ def write_html(rows: Sequence[Row], path: Path, note_text: str = "") -> Path:
     total_msgs = sum(_int(r, "mail_chuyen") for r in rows)
     total_bytes = sum(_int(r, "bytes") for r in rows)
     body = (
-        "<h1>Bao cao migrate mail: Google &rarr; IceWarp</h1>"
+        "<h1>Bao cao migrate mail%s</h1>" % _html_title(rows) +
         '<div class="sub">Tao luc %s%s</div>'
         "<table><thead><tr><th>Nguon</th><th>Dich</th><th>Ket qua</th><th>Folder</th>"
         "<th>Mail</th><th>Dung luong</th><th>Thoi gian</th><th>Loi le</th>"

@@ -98,7 +98,7 @@ PAGE = r"""<!doctype html>
     <div class="bar">
       <button data-act="preflight">Kiểm tra đăng nhập</button>
       <button data-act="discover">Kế hoạch folder</button>
-      <button data-act="dest">Folder bên IceWarp</button>
+      <button data-act="dest" id="btn-dest">Folder bên đích</button>
       <button data-act="sizes">Đo dung lượng</button>
       <span class="sep"></span>
       <button data-act="folders">Tạo cây folder</button>
@@ -133,13 +133,13 @@ PAGE = r"""<!doctype html>
   <section class="card">
     <h2>Thêm mailbox</h2>
     <form class="add" id="addform" autocomplete="off">
-      <div><label>Địa chỉ Gmail</label>
+      <div><label id="lb-src">Địa chỉ nguồn</label>
            <input name="src_user" placeholder="an@congty-cu.com" required></div>
-      <div><label>App Password (16 ký tự)</label>
-           <input name="src_password" type="password" required></div>
-      <div><label>Địa chỉ IceWarp</label>
+      <div id="wrap-srcpass"><label id="lb-srcpass">Mật khẩu nguồn</label>
+           <input name="src_password" type="password"></div>
+      <div><label id="lb-dst">Địa chỉ đích</label>
            <input name="dst_user" placeholder="an@congty.vn" required></div>
-      <div><label>Mật khẩu IceWarp</label>
+      <div><label id="lb-dstpass">Mật khẩu đích</label>
            <input name="dst_password" type="password" required></div>
       <div><button type="submit" class="primary">Thêm vào danh sách</button></div>
     </form>
@@ -248,7 +248,7 @@ function renderJob() {
 
 async function removeUser(user) {
   const msg = "Xoá " + user + " khỏi danh sách?\n\n" +
-    "Chỉ xoá dòng trong users.csv. Mail đã chuyển sang IceWarp và log vẫn còn nguyên.";
+    "Chỉ xoá dòng trong users.csv. Mail đã chuyển và log vẫn còn nguyên.";
   if (!confirm(msg)) return;
   try {
     const res = await fetch("/api/users/remove", {
@@ -274,12 +274,30 @@ async function refresh() {
     $("jobinfo").innerHTML = '<span class="err">Mất kết nối tới máy chủ</span>';
     return schedule();
   }
-  $("src").textContent = state.source;
-  $("dst").textContent = state.dest;
+  $("src").textContent = state.source_provider + " · " + state.source;
+  $("dst").textContent = state.dest_provider + " · " + state.dest;
   $("meta").textContent = "config: " + state.config +
     " · song song: " + state.workers + " mailbox";
   $("usersfile").textContent = state.users_file;
+  renderLabels();
   renderRows(); renderScope(); renderJob(); schedule();
+}
+
+// Nhan trong giao dien lay tu config chu khong viet cung: mot ban cai chay
+// Gmail -> IceWarp, ban khac chay Microsoft 365 -> Zimbra.
+function renderLabels() {
+  const src = state.source_provider, dst = state.dest_provider;
+  $("btn-dest").textContent = "Folder bên " + dst;
+  $("lb-src").textContent = "Địa chỉ " + src;
+  $("lb-dst").textContent = "Địa chỉ " + dst;
+  $("lb-dstpass").textContent = "Mật khẩu " + dst;
+  const pass = $("wrap-srcpass"), input = pass.querySelector("input");
+  // OAuth2: không ai có mật khẩu của user, nên không hỏi.
+  pass.style.display = state.needs_src_password ? "" : "none";
+  input.required = !!state.needs_src_password;
+  $("lb-srcpass").textContent =
+    state.source_provider.indexOf("Gmail") === 0 ? "App Password (16 ký tự)"
+                                                 : "Mật khẩu " + src;
 }
 
 function schedule() {
@@ -295,9 +313,11 @@ document.querySelectorAll("button[data-act]").forEach((btn) => {
     const who = only.length ? only.length + " mailbox đã chọn" : "TẤT CẢ mailbox";
     if (act === "sync" || act === "resume") {
       const msg = act === "resume"
-        ? "Chạy tiếp cho " + who + "?\n\nMail sẽ được ghi vào IceWarp. "
-          + "Mailbox đã chạy xong trước đó sẽ bị bỏ qua."
-        : "Chạy thật cho " + who + "?\n\nMail sẽ được ghi vào IceWarp.";
+        ? "Chạy tiếp cho " + who + "?\n\nMail sẽ được ghi vào "
+          + state.dest_provider
+          + ". Mailbox đã chạy xong trước đó sẽ bị bỏ qua."
+        : "Chạy thật cho " + who + "?\n\nMail sẽ được ghi vào "
+          + state.dest_provider + ".";
       if (!confirm(msg)) return;
     }
     document.querySelectorAll("button[data-act]").forEach((b) => { b.disabled = true; });

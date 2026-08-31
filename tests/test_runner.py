@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from migrate_mail import providers
 from migrate_mail.config import Config, Paths, ServerConf, SyncConf
 from migrate_mail.discover import _parse_list_line, build_plan
 from migrate_mail.runner import (MODE_DRY, MODE_SYNC, build_command, parse_output,
@@ -388,25 +389,30 @@ class TestSizesMode(unittest.TestCase):
 class TestDaysNeeded(unittest.TestCase):
     """Gioi han Gmail 2500 MB/ngay/account quyet dinh lich chay."""
 
-    def days(self, n):
+    LIMIT = providers.GMAIL.daily_limit
+
+    def days(self, n, limit=None):
         from migrate_mail.cli import _days_needed
-        return _days_needed(n)
+        return _days_needed(n, self.LIMIT if limit is None else limit)
 
     def test_empty_mailbox(self):
         self.assertEqual(self.days(0), 0)
 
     def test_exactly_at_the_limit_is_one_day(self):
-        from migrate_mail.runner import GMAIL_DAILY_LIMIT
-        self.assertEqual(self.days(GMAIL_DAILY_LIMIT), 1)
+        self.assertEqual(self.days(self.LIMIT), 1)
 
     def test_one_byte_over_needs_two_days(self):
-        from migrate_mail.runner import GMAIL_DAILY_LIMIT
-        self.assertEqual(self.days(GMAIL_DAILY_LIMIT + 1), 2)
+        self.assertEqual(self.days(self.LIMIT + 1), 2)
 
     def test_five_gigabytes(self):
         self.assertEqual(self.days(5 * 1024 ** 3), 3)
 
     def test_rounds_up_never_down(self):
-        from migrate_mail.runner import GMAIL_DAILY_LIMIT
-        for n in (1, 100, GMAIL_DAILY_LIMIT - 1):
+        for n in (1, 100, self.LIMIT - 1):
             self.assertEqual(self.days(n), 1)
+
+    def test_provider_without_published_limit_reports_nothing(self):
+        """Chi Gmail cong bo han muc/ngay. Voi nguon khac, cot 'Ngay toi da'
+        khong co nghia gi va phai bien mat chu khong duoc doan bua."""
+        self.assertEqual(providers.M365.daily_limit, 0)
+        self.assertEqual(self.days(50 * 1024 ** 3, providers.M365.daily_limit), 0)

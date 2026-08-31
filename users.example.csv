@@ -1,13 +1,23 @@
 # Copy thanh users.csv roi dien. Nho: chmod 600 users.csv
 #
-# src_password  = App Password 16 ky tu cua Google (KHONG phai mat khau dang nhap).
-#                 Tao tai https://myaccount.google.com/apppasswords -- account
-#                 phai bat xac thuc 2 buoc thi muc nay moi hien ra.
-#                 Google hien no dang "abcd efgh ijkl mnop"; dan vao day co
-#                 khoang trang cung duoc, tool tu bo.
-# dst_password  = mat khau hop thu tren IceWarp.
+# src_password  = mat khau hop thu ben NGUON. Tuy nha cung cap:
+#
+#   Gmail / Workspace  App Password 16 ky tu (KHONG phai mat khau dang nhap).
+#                      Tao tai https://myaccount.google.com/apppasswords --
+#                      account phai bat xac thuc 2 buoc thi muc nay moi hien.
+#                      Google hien no dang "abcd efgh ijkl mnop"; dan vao day
+#                      co khoang trang cung duoc, tool tu bo.
+#   Yahoo/Zoho/iCloud  app-specific password, tao trong phan bao mat.
+#   Microsoft 365      neu config.ini dat auth = oauth2 thi DE TRONG cot nay:
+#                      tool dang nhap bang token cua app, khong can mat khau
+#                      cua tung user.
+#   Con lai            mat khau thuong cua mailbox.
+#
+# dst_password  = mat khau hop thu ben dich.
+#
+# Xem cach chuan bi cho tung nguon: ./mm.py providers <ten>
 #
 # Dong bat dau bang # va dong trong deu duoc bo qua.
 src_user,src_password,dst_user,dst_password
-an.nguyen@congty-cu.com,abcd efgh ijkl mnop,an.nguyen@congty.vn,MatKhauIceWarp1
-binh.tran@congty-cu.com,qrstuvwxyzabcdef,binh.tran@congty.vn,MatKhauIceWarp2
+an.nguyen@congty-cu.com,abcd efgh ijkl mnop,an.nguyen@congty.vn,MatKhauDich1
+binh.tran@congty-cu.com,qrstuvwxyzabcdef,binh.tran@congty.vn,MatKhauDich2

@@ -17,23 +17,23 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from . import oauth
 from .config import Config
 from .discover import Plan
 from .hints import diagnose
+from .oauth import OAuthError
 from .users import User
 
 MODE_SYNC = "sync"
 MODE_DRY = "dry"
 MODE_FOLDERS = "folders"
 MODE_SIZES = "sizes"
-
-# Gioi han Gmail: 2500 MB tai ve moi ngay cho moi account.
-GMAIL_DAILY_LIMIT = 2500 * 1024 * 1024
 
 # Cac dong thong ke o cuoi output imapsync
 _STAT_PATTERNS = {
@@ -84,13 +84,66 @@ class Result:
 
 
 def _write_secret(path: Path, value: str) -> None:
-    """Ghi file chi chu so huu doc duoc, tao voi quyen dung ngay tu dau."""
+    """Ghi file chi chu so huu doc duoc, tao voi quyen dung ngay tu dau.
+
+    Ghi ra file tam roi doi cho: file token duoc ghi de TRONG LUC imapsync
+    dang chay (xem _TokenRefresher), va imapsync doc lai no moi lan ket noi
+    lai. Xoa-roi-tao-lai se de lo mot khoang file khong ton tai; os.replace
+    thi khong -- nguoi doc thay ban cu hoac ban moi, khong bao gio thay rong.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        path.unlink()
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    tmp = path.with_name(path.name + ".tmp")
+    if tmp.exists():
+        tmp.unlink()
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(value)
+    os.replace(str(tmp), str(path))
+
+
+# Bao lau kiem tra token mot lan. Token cua Microsoft song khoang mot gio, con
+# mot mailbox lon co the chay ca chuc gio.
+TOKEN_CHECK_SECONDS = 240
+
+
+class _TokenRefresher:
+    """Giu file token luon con han trong suot mot lan chay imapsync.
+
+    Vi sao can: imapsync doc lai file token moi lan no ket noi lai giua chung
+    (tai lieu cua no noi ro do la loi the cua dang file so voi dang chuoi).
+    Neu ta chi ghi token mot lan luc khoi dong, hop thu nao chay qua mot gio
+    se dut o lan reconnect dau tien sau khi token het han -- va loi bao ra la
+    "AUTHENTICATE failed", khong dan ai nghi toi token ca.
+    """
+
+    def __init__(self, jobs):
+        # jobs: danh sach (ServerConf, Path) cua nhung dau chay oauth
+        self.jobs = jobs
+        self.stop = threading.Event()
+        self.thread: Optional[threading.Thread] = None
+
+    def __enter__(self) -> "_TokenRefresher":
+        if self.jobs:
+            self.thread = threading.Thread(target=self._loop, daemon=True)
+            self.thread.start()
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.stop.set()
+        if self.thread is not None:
+            self.thread.join(timeout=5)
+
+    def _loop(self) -> None:
+        while not self.stop.wait(TOKEN_CHECK_SECONDS):
+            for server, path in self.jobs:
+                try:
+                    # TokenSource tu biet khi nao can xin token moi; goi lai
+                    # luc chua het han chi tra ve ban dang co.
+                    _write_secret(path, oauth.source_for(server.oauth).token())
+                except Exception:
+                    # Ban token dang nam tren dia van con dung duoc them mot
+                    # luc. Dung lam hong lan sync chi vi mot lan goi mang hong.
+                    pass
 
 
 def user_statedir(cfg: Config, user: User) -> Path:
@@ -99,17 +152,29 @@ def user_statedir(cfg: Config, user: User) -> Path:
 
 def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
                   passfile1: Path, passfile2: Path, statedir: Path,
-                  since_days: int = 0) -> List[str]:
+                  since_days: int = 0,
+                  tokenfile1: Optional[Path] = None,
+                  tokenfile2: Optional[Path] = None) -> List[str]:
     sync = cfg.sync
     cmd: List[str] = list(cfg.paths.imapsync_argv)
 
     cmd += ["--host1", cfg.source.host, "--port1", str(cfg.source.port)]
     cmd += ["--ssl1"] if cfg.source.ssl else ["--notls1"]
-    cmd += ["--user1", user.src_user, "--passfile1", str(passfile1)]
+    cmd += ["--user1", user.src_user]
+    # Nguon chay OAuth2 (Microsoft 365) thi khong co mat khau nao ca: imapsync
+    # doc access token tu file va tu chuyen sang SASL XOAUTH2.
+    if cfg.source.uses_oauth:
+        cmd += ["--oauthaccesstoken1", str(tokenfile1)]
+    else:
+        cmd += ["--passfile1", str(passfile1)]
 
     cmd += ["--host2", cfg.dest.host, "--port2", str(cfg.dest.port)]
     cmd += ["--ssl2"] if cfg.dest.ssl else ["--notls2"]
-    cmd += ["--user2", user.dst_user, "--passfile2", str(passfile2)]
+    cmd += ["--user2", user.dst_user]
+    if cfg.dest.uses_oauth:
+        cmd += ["--oauthaccesstoken2", str(tokenfile2)]
+    else:
+        cmd += ["--passfile2", str(passfile2)]
 
     if plan is not None:
         cmd += plan.imapsync_args()
@@ -118,21 +183,23 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
     # Day la nguyen nhan cua trieu chung "mail nhay het ve ngay migrate".
     # imapsync mac dinh da bat syncinternaldates, nhung ta viet ra tuong minh
     # de nhin thay trong log, va de khong phu thuoc vao mac dinh co the doi.
-    #   internal: dung INTERNALDATE cua Gmail (ngay mail vao hop thu Gmail)
+    #   internal: dung INTERNALDATE cua nguon (ngay mail vao hop thu ben do)
     #   header  : dung header Date: trong than mail (ngay nguoi gui gui di)
     if sync.date_source == "header":
         cmd += ["--idatefromheader"]
     else:
         cmd += ["--syncinternaldates"]
 
-    # Gmail co the sua header Received, nen chi dinh danh mail bang Message-Id.
+    # Nhieu server (Gmail, Exchange) sua header Received khi nhan mail, nen
+    # chi dinh danh mail bang Message-Id cho on dinh giua hai dau.
     cmd += ["--useheader", "Message-Id"]
     # Mail thieu Message-Id (hay gap o Drafts) se bi coi la moi o moi lan chay
     # -> nhan ban khi chay vong delta. --addheader gan dinh danh on dinh cho chung.
     cmd += ["--addheader"]
 
     if sync.filterflags:
-        # Bo cac flag ma IceWarp khong nhan, thay vi de imapsync bao loi tung mail.
+        # Bo cac flag ma server dich khong nhan, thay vi de imapsync bao loi
+        # tren tung mail cho den khi cham errorsmax.
         cmd += ["--filterflags"]
     if sync.skipcrossduplicates:
         cmd += ["--skipcrossduplicates"]
@@ -206,15 +273,32 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
 
     pass1 = statedir / "src.pass"
     pass2 = statedir / "dst.pass"
+    token1 = statedir / "src.token"
+    token2 = statedir / "dst.token"
+    secrets = [pass1, pass2, token1, token2]
 
     try:
-        _write_secret(pass1, user.src_password)
-        _write_secret(pass2, user.dst_password)
-        cmd = build_command(cfg, user, plan, mode, pass1, pass2, statedir, since_days)
+        refresh_jobs = []
+        for server, passfile, tokenfile, password in (
+                (cfg.source, pass1, token1, user.src_password),
+                (cfg.dest, pass2, token2, user.dst_password)):
+            if server.uses_oauth:
+                # Token het han sau khoang mot gio; lay ngay truoc khi chay de
+                # mailbox nao cung khoi dong voi mot token con han.
+                _write_secret(tokenfile, oauth.source_for(server.oauth).token())
+                refresh_jobs.append((server, tokenfile))
+            else:
+                _write_secret(passfile, password)
+
+        cmd = build_command(cfg, user, plan, mode, pass1, pass2, statedir,
+                            since_days, token1, token2)
 
         chunks: List[str] = []
-        with logfile.open("w", encoding="utf-8", errors="replace", newline="\n") as fh:
+        with _TokenRefresher(refresh_jobs), \
+                logfile.open("w", encoding="utf-8", errors="replace", newline="\n") as fh:
             fh.write("# lenh: %s\n" % " ".join(_redact(cmd)))
+            fh.write("# nguon: %s -> dich: %s\n"
+                     % (cfg.source.provider.name, cfg.dest.provider.name))
             fh.write("# bat dau: %s\n\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
             fh.flush()
             # encoding phai chi dinh ro: mac dinh Python doc theo locale cua he
@@ -242,30 +326,39 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
         if result.exit_code != 0 and not result.exit_label:
             result.exit_label = "exit code %d" % result.exit_code
         if result.exit_code != 0 or result.get("errors") > 0:
-            result.hints = diagnose("".join(chunks))
+            result.hints = diagnose("".join(chunks),
+                                    source=cfg.source.provider.key,
+                                    dest=cfg.dest.provider.key)
 
     except FileNotFoundError:
         result.error = ("khong tim thay lenh '%s'. Chay ./install.sh hoac sua "
                         "[paths] imapsync trong config.ini" % cfg.paths.imapsync)
+    except OAuthError as exc:
+        result.error = "khong lay duoc OAuth2 token: %s" % exc
     except KeyboardInterrupt:
         result.error = "bi nguoi dung dung"
         raise
     except Exception as exc:                              # pragma: no cover
         result.error = "%s: %s" % (type(exc).__name__, exc)
     finally:
-        for p in (pass1, pass2):
-            try:
-                if p.exists():
-                    p.unlink()
-            except OSError:
-                pass
+        for p in secrets:
+            for target in (p, p.with_name(p.name + ".tmp")):
+                try:
+                    if target.exists():
+                        target.unlink()
+                except OSError:
+                    pass
         result.finished = time.time()
 
     return result
 
 
+_SECRET_FLAGS = ("--passfile1", "--passfile2",
+                 "--oauthaccesstoken1", "--oauthaccesstoken2")
+
+
 def _redact(cmd: List[str]) -> List[str]:
-    """Che duong dan passfile khi ghi lenh vao log."""
+    """Che duong dan file bi mat khi ghi lenh vao log."""
     out = []
     skip = False
     for token in cmd:
@@ -274,7 +367,7 @@ def _redact(cmd: List[str]) -> List[str]:
             skip = False
             continue
         out.append(token)
-        if token in ("--passfile1", "--passfile2"):
+        if token in _SECRET_FLAGS:
             skip = True
     return out
 
@@ -303,6 +396,23 @@ def imapsync_run(cfg: Config, flag: str, timeout: int = 30) -> str:
 
 def imapsync_help(cfg: Config, timeout: int = 30) -> str:
     return imapsync_run(cfg, "--help", timeout)
+
+
+# Ban imapsync toi thieu de chay OAuth2 duoc. Moc nay khong phai luc tuy chon
+# --oauthaccesstoken1 xuat hien (2.113) ma la luc no thuc su dung mot minh
+# duoc: truoc 2.251 imapsync van doi co --password1 di kem, nen doi chieu ten
+# tuy chon thoi se bao "ho tro" cho mot ban chac chan se that bai.
+OAUTH_MIN_VERSION = (2, 251)
+
+_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
+
+
+def imapsync_version(cfg: Config) -> Optional[tuple]:
+    """(major, minor) cua ban imapsync dang cai, None neu khong doc duoc."""
+    m = _VERSION_RE.search(imapsync_run(cfg, "--version"))
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
 
 
 # Bang tuy chon that cua imapsync nam trong loi goi GetOptions, dang:
@@ -356,7 +466,7 @@ def unsupported_flags(cfg: Config, flags: List[str]) -> List[str]:
 
 def flags_used(cfg: Config) -> List[str]:
     """Danh sach flag tool nay co the sinh ra, de lenh `doctor` kiem tra."""
-    return [
+    flags = [
         "--host1", "--port1", "--ssl1", "--notls1", "--user1", "--passfile1",
         "--host2", "--port2", "--ssl2", "--notls2", "--user2", "--passfile2",
         "--exclude", "--f1f2", "--useheader", "--addheader", "--filterflags",
@@ -366,3 +476,10 @@ def flags_used(cfg: Config) -> List[str]:
         "--justfoldersizes",
         "--syncinternaldates", "--idatefromheader",
     ]
+    # Chi kiem flag OAuth2 khi that su dung toi: no chi co tu imapsync 1.945,
+    # va bat ai cung phai nang cap chi vi mot tinh nang khong dung la vo ly.
+    if cfg.source.uses_oauth:
+        flags.append("--oauthaccesstoken1")
+    if cfg.dest.uses_oauth:
+        flags.append("--oauthaccesstoken2")
+    return flags

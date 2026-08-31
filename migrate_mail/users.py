@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-REQUIRED = ["src_user", "src_password", "dst_user", "dst_password"]
+COLUMNS = ["src_user", "src_password", "dst_user", "dst_password"]
+# Cot luon phai co. src_password chi bat buoc khi nguon dang nhap bang mat
+# khau; voi Microsoft 365 chay OAuth2 thi khong ai co mat khau cua user ca.
+REQUIRED = ["src_user", "dst_user", "dst_password"]
 
 
 @dataclass
@@ -46,7 +49,13 @@ def check_permissions(path: Path) -> str:
     return ""
 
 
-def load_users(path: Path) -> List[User]:
+def load_users(path: Path, need_src_password: bool = True) -> List[User]:
+    """Doc users.csv.
+
+    `need_src_password` = False khi nguon dang nhap khong bang mat khau
+    (Microsoft 365 chay OAuth2): khi do cot src_password co the de trong hoac
+    khong co trong file.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(
@@ -56,22 +65,26 @@ def load_users(path: Path) -> List[User]:
     if warn:
         print(warn, file=sys.stderr)
 
+    required = list(REQUIRED)
+    if need_src_password:
+        required.insert(1, "src_password")
+
     users: List[User] = []
     seen_src, seen_dst = set(), set()
     with path.open(newline="", encoding="utf-8-sig") as fh:
         # Bo dong trong va dong bat dau bang '#' truoc khi dua vao csv reader.
         lines = [ln for ln in fh if ln.strip() and not ln.lstrip().startswith("#")]
         reader = csv.DictReader(lines)
-        missing = [c for c in REQUIRED if c not in (reader.fieldnames or [])]
+        missing = [c for c in required if c not in (reader.fieldnames or [])]
         if missing:
             raise ValueError(
-                "users.csv thieu cot: %s (can du: %s)" % (", ".join(missing), ", ".join(REQUIRED))
+                "users.csv thieu cot: %s (can du: %s)" % (", ".join(missing), ", ".join(required))
             )
         for i, rec in enumerate(reader, start=2):
-            vals = {k: (rec.get(k) or "").strip() for k in REQUIRED}
+            vals = {k: (rec.get(k) or "").strip() for k in COLUMNS}
             if not any(vals.values()):
                 continue
-            empty = [k for k, v in vals.items() if not v]
+            empty = [k for k in required if not vals[k]]
             if empty:
                 raise ValueError("users.csv dong %d thieu gia tri: %s" % (i, ", ".join(empty)))
 

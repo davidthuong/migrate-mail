@@ -39,7 +39,7 @@ MAX_LOG_LINES = 400
 ACTIONS = {
     "preflight": "Kiem tra dang nhap",
     "discover": "Xem ke hoach folder",
-    "dest": "Xem folder ben IceWarp",
+    "dest": "Xem folder ben dich",
     "sizes": "Do dung luong",
     "folders": "Tao cay folder",
     "dry": "Chay khan",
@@ -197,7 +197,8 @@ def _latest_rows(cfg: Config) -> Dict[str, Dict]:
 
 def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
     try:
-        users = load_users(users_path)
+        users = load_users(users_path,
+                           need_src_password=not cfg.source.uses_oauth)
     except Exception:
         return []
     latest = _latest_rows(cfg)
@@ -311,17 +312,23 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/state":
+            cfg = self.manager.cfg
             self._json({
                 "version": __version__,
-                "source": "%s:%d" % (self.manager.cfg.source.host,
-                                     self.manager.cfg.source.port),
-                "dest": "%s:%d" % (self.manager.cfg.dest.host,
-                                   self.manager.cfg.dest.port),
-                "config": str(self.manager.cfg.path),
-                "workers": self.manager.cfg.sync.workers,
+                "source": "%s:%d" % (cfg.source.host, cfg.source.port),
+                "dest": "%s:%d" % (cfg.dest.host, cfg.dest.port),
+                # Giao dien lay ten nha cung cap tu day chu khong viet cung
+                # trong HTML: mot ban cai co the chay Gmail -> IceWarp, ban
+                # khac chay Microsoft 365 -> Zimbra.
+                "source_provider": cfg.source.provider.name,
+                "dest_provider": cfg.dest.provider.name,
+                "source_auth": cfg.source.auth,
+                "needs_src_password": not cfg.source.uses_oauth,
+                "config": str(cfg.path),
+                "workers": cfg.sync.workers,
                 "users_file": str(self.users_path),
                 "actions": ACTIONS,
-                "mailboxes": _mailboxes(self.manager.cfg, self.users_path),
+                "mailboxes": _mailboxes(cfg, self.users_path),
                 "job": self.manager.job.as_dict() if self.manager.job else None,
             })
             return
@@ -347,7 +354,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/users":
             try:
-                added = _add_user(self.users_path, body)
+                added = _add_user(
+                    self.users_path, body,
+                    need_src_password=not self.manager.cfg.source.uses_oauth)
             except ValueError as exc:
                 self._json({"error": str(exc)}, 400)
                 return
@@ -369,13 +378,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "khong tim thay"}, 404)
 
 
-def _add_user(users_path: Path, body: Dict) -> str:
+def _add_user(users_path: Path, body: Dict, need_src_password: bool = True) -> str:
     """Them mot dong vao users.csv. Tra ve dia chi nguon vua them."""
     import csv
 
     fields = ["src_user", "src_password", "dst_user", "dst_password"]
     values = {k: str(body.get(k) or "").strip() for k in fields}
-    missing = [k for k in fields if not values[k]]
+    # Nguon chay OAuth2 thi khong ai co mat khau cua user; cot van duoc ghi ra
+    # cho dung dinh dang file, chi de trong.
+    required = [f for f in fields if f != "src_password" or need_src_password]
+    missing = [k for k in required if not values[k]]
     if missing:
         raise ValueError("thieu: %s" % ", ".join(missing))
     if "@" not in values["src_user"] or "@" not in values["dst_user"]:
@@ -383,7 +395,8 @@ def _add_user(users_path: Path, body: Dict) -> str:
 
     existing = []
     try:
-        existing = [u.src_user.lower() for u in load_users(users_path)]
+        existing = [u.src_user.lower()
+                    for u in load_users(users_path, need_src_password)]
     except Exception:
         pass
     if values["src_user"].lower() in existing:

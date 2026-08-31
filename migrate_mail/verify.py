@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Doi chieu ngay thang cua mail giua Gmail va IceWarp sau khi sync.
+"""Doi chieu ngay thang cua mail giua hai dau sau khi sync.
 
 Vi sao can buoc nay: IMAP co hai loai ngay.
 
@@ -73,7 +73,7 @@ class UserCheck:
 
 
 def quote_folder(name: str) -> str:
-    """Ten folder Gmail co dau cach va ngoac vuong, bat buoc phai boc nhay."""
+    """Ten folder co the co dau cach va ngoac vuong, bat buoc phai boc nhay."""
     escaped = name.replace("\\", "\\\\").replace('"', '\\"')
     return '"%s"' % escaped
 

@@ -1,3 +1,6 @@
-"""migrate-mail: orchestrator imapsync cho migration Gmail/Google Workspace -> IceWarp."""
+"""migrate-mail: orchestrator imapsync cho migration giua cac nha cung cap IMAP.
 
-__version__ = "1.0.0"
+Nguon/dich duoc khai bao trong providers.py; xem `mm.py providers`.
+"""
+
+__version__ = "1.1.0"

@@ -151,6 +151,66 @@ class TestDiagnose(unittest.TestCase):
         self.assertLessEqual(len(diagnose(text, limit=2)), 2)
 
 
+class TestProviderScope(unittest.TestCase):
+    """Goi y phai theo dung nha cung cap dang chay.
+
+    Bao "dung App Password cua Google" cho mot ca migrate tu Zimbra khong chi
+    la vo dung: no lam nguoi truc di sai huong dung luc dang gap su co.
+    """
+
+    def tips(self, text, source=None, dest=None):
+        return diagnose(text, source=source, dest=dest)
+
+    def test_gmail_advice_does_not_reach_a_zimbra_migration(self):
+        text = "NO [ALERT] Application-specific password required"
+        self.assertEqual(self.tips(text, source="zimbra", dest="icewarp"), [])
+
+    def test_microsoft_basic_auth_points_at_oauth(self):
+        text = "LOGIN failed: basic authentication is disabled for this tenant"
+        tips = self.tips(text, source="m365", dest="icewarp")
+        self.assertTrue(any("oauth2" in t for t in tips), tips)
+
+    def test_aadsts_code_is_explained(self):
+        text = "AADSTS7000215: Invalid client secret provided"
+        tips = self.tips(text, source="m365", dest="icewarp")
+        self.assertTrue(any("client_secret" in t for t in tips), tips)
+
+    def test_dovecot_connection_limit_names_the_setting(self):
+        text = "NO [UNAVAILABLE] Maximum number of connections from user+IP exceeded"
+        tips = self.tips(text, source="dovecot", dest="icewarp")
+        self.assertTrue(any("mail_max_userip_connections" in t for t in tips), tips)
+
+    def test_microsoft_throttling_is_not_a_daily_quota(self):
+        """Nham cho nay se lam ca doi ngoi cho qua ngay trong khi chi can ha
+        workers xuong la chay tiep duoc."""
+        text = "NO Server Unavailable. 15"
+        tips = self.tips(text, source="m365", dest="icewarp")
+        self.assertTrue(any("workers" in t for t in tips), tips)
+        self.assertFalse(any("2500 MB" in t for t in tips), tips)
+
+    def test_generic_advice_names_both_providers(self):
+        text = "AUTHENTICATIONFAILED Invalid credentials"
+        tips = self.tips(text, source="zimbra", dest="icewarp")
+        self.assertTrue(any("Zimbra" in t and "IceWarp" in t for t in tips), tips)
+
+    def test_unknown_provider_prefers_the_general_advice(self):
+        """Log cu (chay truoc khi tool biet den provider) khong co thong tin
+        nguon; khi do loi khuyen chung dung hon loi khuyen doan mo."""
+        text = "AUTHENTICATIONFAILED Invalid credentials"
+        tips = self.tips(text)
+        self.assertTrue(any("users.csv" in t for t in tips), tips)
+
+    def test_unknown_provider_still_keeps_advice_that_has_no_general_twin(self):
+        text = "NO [LIMIT] Bandwidth limit exceeded for this account"
+        self.assertTrue(any("2500 MB" in t for t in self.tips(text)))
+
+    def test_icewarp_gets_its_own_folder_advice(self):
+        text = "NO [TRYCREATE] Mailbox doesn't exist"
+        tips = self.tips(text, source="gmail", dest="icewarp")
+        self.assertTrue(any("PIM" in t for t in tips), tips)
+        self.assertEqual(len([t for t in tips if "regextrans2" in t]), 1, tips)
+
+
 def row(**kw):
     base = {"src_user": "a@cu.com", "dst_user": "a@moi.vn", "ket_qua": "OK",
             "folder": "9/9", "mail_chuyen": "10", "mail_bo_qua": "0",

@@ -12,15 +12,18 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, report, verify
+from . import __version__, providers, report, verify
 from .config import Config, load_config
-from .discover import (NOSELECT, SPECIAL_DRAFTS, SPECIAL_JUNK, SPECIAL_SENT,
-                       SPECIAL_TRASH, DiscoveryError, Plan, build_plan,
-                       check_login, list_folders, open_connection)
-from .runner import (GMAIL_DAILY_LIMIT, MODE_DRY, MODE_FOLDERS,
-                     MODE_SIZES, MODE_SYNC, Result, flags_used, imapsync_available,
-                     imapsync_run, run_user, unsupported_flags, user_statedir)
-from .users import User, filter_users, load_users
+from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
+                       SPECIAL_SENT, SPECIAL_TRASH, DiscoveryError, Plan,
+                       DestLayout, build_plan, check_login, list_folders,
+                       open_connection)
+from .hints import diagnose
+from .runner import (MODE_DRY, MODE_FOLDERS, MODE_SIZES, MODE_SYNC,
+                     OAUTH_MIN_VERSION, Result, flags_used, imapsync_available,
+                     imapsync_run, imapsync_version, run_user,
+                     unsupported_flags, user_statedir)
+from .users import User, check_permissions, filter_users, load_users
 
 _print_lock = threading.Lock()
 
@@ -57,6 +60,15 @@ def _now() -> str:
     return time.strftime("%H:%M:%S")
 
 
+def _users(args, cfg: Config) -> List[User]:
+    """Doc users.csv theo dung kieu xac thuc dang cau hinh.
+
+    Nguon chay OAuth2 thi khong ai co mat khau cua user, nen cot src_password
+    duoc phep de trong.
+    """
+    return load_users(args.users, need_src_password=not cfg.source.uses_oauth)
+
+
 # --------------------------------------------------------------------------- #
 # doctor
 # --------------------------------------------------------------------------- #
@@ -66,9 +78,15 @@ def cmd_doctor(args, cfg: Config) -> int:
 
     say("migrate-mail %s | Python %s" % (__version__, sys.version.split()[0]))
     say("config      : %s" % cfg.path)
-    say("nguon       : %s:%d (ssl=%s)" % (cfg.source.host, cfg.source.port, cfg.source.ssl))
-    say("dich        : %s:%d (ssl=%s)" % (cfg.dest.host, cfg.dest.port, cfg.dest.ssl))
+    say("nguon       : %s | %s:%d (ssl=%s, auth=%s)"
+        % (cfg.source.provider.name, cfg.source.host, cfg.source.port,
+           cfg.source.ssl, cfg.source.auth))
+    say("dich        : %s | %s:%d (ssl=%s, auth=%s)"
+        % (cfg.dest.provider.name, cfg.dest.host, cfg.dest.port,
+           cfg.dest.ssl, cfg.dest.auth))
     say("")
+
+    problems += _check_oauth(cfg)
 
     path = imapsync_available(cfg)
     if not path:
@@ -94,7 +112,7 @@ def cmd_doctor(args, cfg: Config) -> int:
             say("[ OK ] ban imapsync nay chap nhan moi flag tool dung")
 
     try:
-        users = load_users(args.users)
+        users = _users(args, cfg)
         say("[ OK ] users.csv: %d mailbox" % len(users))
     except Exception as exc:
         say("[LOI ] users.csv: %s" % exc)
@@ -113,7 +131,56 @@ def cmd_doctor(args, cfg: Config) -> int:
 
     say("")
     say("Ket luan: %s" % ("san sang" if problems == 0 else "%d van de can xu ly" % problems))
+    if problems:
+        say("")
+        _print_prep(cfg.source.provider, "nguon")
     return 0 if problems == 0 else 1
+
+
+def _check_oauth(cfg: Config) -> int:
+    """Kiem cau hinh OAuth2 va thu lay token that su -- doi khi la cach duy
+    nhat biet client secret con han hay khong."""
+    if not (cfg.source.uses_oauth or cfg.dest.uses_oauth):
+        return 0
+
+    problems = 0
+    version = imapsync_version(cfg)
+    if version is not None and version < OAUTH_MIN_VERSION:
+        # Doi chieu ten tuy chon (unsupported_flags) khong bat duoc cho nay:
+        # --oauthaccesstoken1 co tu 2.113, nhung truoc 2.251 imapsync van doi
+        # co --password1 di kem nen se dung ngay.
+        say("[LOI ] imapsync %d.%d qua cu cho auth = oauth2, can tu %d.%d tro len."
+            % (version[0], version[1], OAUTH_MIN_VERSION[0], OAUTH_MIN_VERSION[1]))
+        problems += 1
+
+    warn = check_permissions(cfg.path)
+    if warn:
+        # config.ini luc nay chua client secret, khong con la file vo hai.
+        say("[CANH] %s" % warn)
+
+    for side, server in (("nguon", cfg.source), ("dich", cfg.dest)):
+        if not server.uses_oauth:
+            continue
+        try:
+            from .oauth import request_token
+            _token, expires = request_token(server.oauth)
+            say("[ OK ] OAuth2 %s: lay duoc token (han %d phut)"
+                % (side, max(1, expires // 60)))
+        except Exception as exc:
+            say("[LOI ] OAuth2 %s: %s" % (side, exc))
+            problems += 1
+    return problems
+
+
+def _print_prep(provider, side: str = "") -> None:
+    if not provider.prep:
+        return
+    if side:
+        say("Chuan bi phia %s (%s):" % (side, provider.name))
+    else:
+        say("Chuan bi truoc khi dung:")
+    for step in provider.prep:
+        say("  - %s" % report._wrap(step, indent=4))
 
 
 # --------------------------------------------------------------------------- #
@@ -121,8 +188,9 @@ def cmd_doctor(args, cfg: Config) -> int:
 # --------------------------------------------------------------------------- #
 
 def cmd_preflight(args, cfg: Config) -> int:
-    users = filter_users(load_users(args.users), args.only)
-    say("Kiem tra dang nhap %d mailbox (ca hai dau)...\n" % len(users))
+    users = filter_users(_users(args, cfg), args.only)
+    say("Kiem tra dang nhap %d mailbox: %s -> %s\n"
+        % (len(users), cfg.source.provider.name, cfg.dest.provider.name))
 
     def probe(user: User) -> Tuple[User, Tuple[bool, str], Tuple[bool, str]]:
         src = check_login(cfg, user, "source")
@@ -147,12 +215,22 @@ def cmd_preflight(args, cfg: Config) -> int:
     say("Ket qua: %d/%d mailbox dang nhap duoc ca hai dau." % (len(results) - len(bad), len(results)))
     if bad:
         say("")
-        say("Goi y xu ly loi hay gap:")
-        say("  - Gmail bao 'Invalid credentials': mat khau dang dung la mat khau")
-        say("    thuong chu khong phai App Password, hoac account chua bat 2FA.")
-        say("  - Gmail bao 'Application-specific password required': dung App Password.")
-        say("  - IceWarp bao 'Authentication failed': kiem tra dung dia chi day du")
-        say("    user@domain va tai khoan da duoc tao chua.")
+        # Goi y o day lay tu chinh cau bao loi cua server, chu khong doan theo
+        # provider: cung mot provider co the hong vi mat khau sai, vi IMAP bi
+        # tat, hay vi IP bi chan -- ba viec can lam khac han nhau.
+        for user, src, dst in bad:
+            for side, (ok, msg) in (("nguon", src), ("dich", dst)):
+                if ok:
+                    continue
+                tips = diagnose(msg, limit=2, source=cfg.source.provider.key,
+                                dest=cfg.dest.provider.key)
+                for tip in tips:
+                    say("  %s (%s): %s" % (user.src_user, side,
+                                           report._wrap(tip, indent=4)))
+        say("")
+        _print_prep(cfg.source.provider, "nguon")
+        say("")
+        _print_prep(cfg.dest.provider, "dich")
     return 0 if not bad else 1
 
 
@@ -160,17 +238,20 @@ def cmd_preflight(args, cfg: Config) -> int:
 # discover
 # --------------------------------------------------------------------------- #
 
-def _discover_one(cfg: Config, user: User) -> Tuple[User, Optional[Plan], str]:
+def _discover_one(cfg: Config, user: User,
+                  dest: Optional[DestLayout] = None) -> Tuple[User, Optional[Plan], str]:
     try:
         folders = list_folders(cfg, user)
-        return user, build_plan(folders, cfg.sync), ""
+        layout = dest.get(user) if dest is not None else None
+        return user, build_plan(folders, cfg.sync, cfg.source.provider,
+                                dest=layout), ""
     except DiscoveryError as exc:
         return user, None, str(exc)
     except Exception as exc:                                # pragma: no cover
         return user, None, "%s: %s" % (type(exc).__name__, exc)
 
 
-def _print_plan(user: User, plan: Plan) -> None:
+def _print_plan(user: User, plan: Plan, cfg: Config) -> None:
     say("")
     say("=== %s (%d folder) ===" % (user.src_user, len(plan.folders)))
     if plan.excluded:
@@ -186,7 +267,7 @@ def _print_plan(user: User, plan: Plan) -> None:
         for f in plan.kept:
             say("    - %s" % f.display)
     _print_unmappable(plan)
-    _print_collisions(plan)
+    _print_collisions(plan, cfg)
 
 
 def _print_unmappable(plan: Plan) -> None:
@@ -198,21 +279,22 @@ def _print_unmappable(plan: Plan) -> None:
     say("  cho --f1f2, nen khong dien ta duoc. Cac folder sau se GIU NGUYEN ten:")
     for folder, wanted in plan.unmappable:
         say("    %s  (le ra -> %s)" % (folder.display, wanted))
-    say("  Cach xu ly: doi ten label do ben Gmail cho het dau '=', roi chay lai.")
+    say("  Cach xu ly: doi ten folder do ben nguon cho het dau '=', roi chay lai.")
 
 
-def _print_collisions(plan: Plan) -> None:
+def _print_collisions(plan: Plan, cfg: Config) -> None:
     collisions = plan.collisions()
     if not collisions:
         return
     say("")
     say("  !! TRUNG TEN FOLDER DICH !!")
-    say("  Nhieu folder Gmail se do chung vao mot folder ben IceWarp:")
+    say("  Nhieu folder ben %s se do chung vao mot folder ben %s:"
+        % (cfg.source.provider.name, cfg.dest.provider.name))
     for dest, sources in collisions:
         say("    %s  <-  %s" % (dest, ", ".join(f.display for f in sources)))
     say("")
-    say("  Thuong gap khi hop thu Gmail truoc day da import tu Outlook: ben canh")
-    say("  folder chuan cua Gmail con sot lai label cu cung cong dung.")
+    say("  Thuong gap khi hop thu nguon truoc day da tung import tu noi khac:")
+    say("  ben canh folder chuan con sot lai mot folder cu cung cong dung.")
     say("  Neu muon giu rieng, doi ten label cu bang extra_args trong config.ini:")
     for dest, _sources in collisions:
         say("    extra_args = --regextrans2 s,^%s$,%s-cu," % (dest, dest))
@@ -220,14 +302,15 @@ def _print_collisions(plan: Plan) -> None:
 
 
 def _print_dest_folders(cfg: Config, user: User) -> int:
-    """Liet ke folder co san ben IceWarp va canh bao neu ten map khong khop.
+    """Liet ke folder co san ben dich va canh bao neu ten map khong khop.
 
-    Can buoc nay vi neu IceWarp goi folder rac la 'Junk E-mail' ma ta lai map
-    sang 'Spam', imapsync se tao them mot folder 'Spam' moi -- ket qua la hop
-    thu co hai folder rac song song, va bo loc cua IceWarp van dung folder cu.
+    Can buoc nay vi neu server dich goi folder rac la 'Junk E-mail' ma ta lai
+    map sang 'Spam', imapsync se tao them mot folder 'Spam' moi -- ket qua la
+    hop thu co hai folder rac song song, va bo loc cua server van dung folder cu.
     """
+    dest_name = cfg.dest.provider.name
     say("")
-    say("=== %s (ben IceWarp) ===" % user.dst_user)
+    say("=== %s (ben %s) ===" % (user.dst_user, dest_name))
     try:
         folders = list_folders(cfg, user, side="dest")
     except DiscoveryError as exc:
@@ -240,7 +323,8 @@ def _print_dest_folders(cfg: Config, user: User) -> int:
         if f.has(NOSELECT):
             marks.append("khong chua mail")
         for flag, label in ((SPECIAL_SENT, "Sent"), (SPECIAL_DRAFTS, "Drafts"),
-                            (SPECIAL_TRASH, "Trash"), (SPECIAL_JUNK, "Junk")):
+                            (SPECIAL_TRASH, "Trash"), (SPECIAL_JUNK, "Junk"),
+                            (SPECIAL_ARCHIVE, "Archive")):
             if f.has(flag):
                 marks.append("special-use: %s" % label)
         say("    - %-38s %s" % (f.display, "  ".join(marks)))
@@ -250,33 +334,37 @@ def _print_dest_folders(cfg: Config, user: User) -> int:
         "drafts_folder": cfg.sync.drafts_folder,
         "trash_folder": cfg.sync.trash_folder,
         "junk_folder": cfg.sync.junk_folder,
+        "archive_folder": cfg.sync.archive_folder,
     }
-    missing = {k: v for k, v in wanted.items() if v not in existing}
+    missing = {k: v for k, v in wanted.items() if v and v not in existing}
     if missing:
         say("")
-        say("  CANH BAO: cac ten sau trong config.ini chua co ben IceWarp,")
+        say("  CANH BAO: cac ten sau trong config.ini chua co ben %s," % dest_name)
         say("  imapsync se TAO MOI folder trung ten:")
         for key, value in missing.items():
             say("    %-14s = %s" % (key, value))
-        say("  Neu IceWarp da co folder cung cong dung nhung khac ten, hay sua")
+        say("  Neu ben dich da co folder cung cong dung nhung khac ten, hay sua")
         say("  config.ini cho khop de mail khong bi tach ra hai noi.")
     return 0
 
 
 def cmd_discover(args, cfg: Config) -> int:
-    users = filter_users(load_users(args.users), args.only)
+    users = filter_users(_users(args, cfg), args.only)
 
     if args.dest:
-        say("Liet ke folder cua %d mailbox tren %s..." % (len(users), cfg.dest.host))
+        say("Liet ke folder cua %d mailbox tren %s (%s)..."
+            % (len(users), cfg.dest.host, cfg.dest.provider.name))
         failed = sum(_print_dest_folders(cfg, u) for u in users)
         say("")
         say("Xong. %d/%d mailbox doc duoc." % (len(users) - failed, len(users)))
         return 0 if failed == 0 else 1
 
-    say("Do folder cua %d mailbox tren %s...\n" % (len(users), cfg.source.host))
+    say("Do folder cua %d mailbox tren %s (%s)...\n"
+        % (len(users), cfg.source.host, cfg.source.provider.name))
+    dest = DestLayout(cfg)
     failed = 0
     with futures.ThreadPoolExecutor(max_workers=min(8, max(1, len(users)))) as pool:
-        jobs = [pool.submit(_discover_one, cfg, u) for u in users]
+        jobs = [pool.submit(_discover_one, cfg, u, dest) for u in users]
         for job in jobs:
             user, plan, err = job.result()
             if plan is None:
@@ -285,10 +373,26 @@ def cmd_discover(args, cfg: Config) -> int:
                 say("=== %s ===" % user.src_user)
                 say("  LOI: %s" % err)
                 continue
-            _print_plan(user, plan)
+            _print_plan(user, plan, cfg)
     say("")
+    _print_dest_layout(dest)
     say("Xong. %d/%d mailbox do duoc." % (len(users) - failed, len(users)))
     return 0 if failed == 0 else 1
+
+
+def _print_dest_layout(dest: DestLayout) -> None:
+    """Noi ra tien to ben dich da do duoc, vi no doi ten MOI folder."""
+    layout = dest.peek()
+    if dest.error:
+        say("CANH BAO: khong doc duoc namespace ben dich (%s)." % dest.error)
+        say("Ke hoach o tren dung theo gia thiet ben dich khong co tien to.")
+        say("")
+        return
+    if layout is not None and layout.prefix:
+        say("Ben dich de folder duoi tien to '%s' (dau phan cach '%s'), nen moi"
+            % (layout.prefix, layout.delim or "/"))
+        say("ten dich o tren da duoc them tien to do.")
+        say("")
 
 
 # --------------------------------------------------------------------------- #
@@ -300,7 +404,7 @@ def _done_marker(cfg: Config, user: User) -> Path:
 
 
 def cmd_sync(args, cfg: Config) -> int:
-    users = filter_users(load_users(args.users), args.only)
+    users = filter_users(_users(args, cfg), args.only)
     if args.sizes:
         mode = MODE_SIZES
     elif args.folders_only:
@@ -323,24 +427,31 @@ def cmd_sync(args, cfg: Config) -> int:
     workers = args.workers or cfg.sync.workers
     workers = max(1, min(workers, len(users)))
 
+    src_name = cfg.source.provider.name
+    dst_name = cfg.dest.provider.name
+
     say("Che do  : %s%s" % (mode, " (--since-days %d)" % args.since_days if args.since_days else ""))
+    say("Chuyen  : %s -> %s" % (src_name, dst_name))
     say("Mailbox : %d | song song: %d" % (len(users), workers))
     say("Log     : %s" % cfg.paths.logdir)
     if mode == MODE_DRY:
-        say("Day la chay thu, khong mail nao duoc ghi vao IceWarp.")
+        say("Day la chay thu, khong mail nao duoc ghi vao %s." % dst_name)
     elif mode == MODE_FOLDERS:
-        say("Chi tao cay folder ben IceWarp, khong chuyen mail nao.")
+        say("Chi tao cay folder ben %s, khong chuyen mail nao." % dst_name)
     elif mode == MODE_SIZES:
-        say("Chi dem dung luong ben Gmail, khong chuyen mail nao.")
+        say("Chi dem dung luong ben %s, khong chuyen mail nao." % src_name)
     say("")
 
     # Buoc 1: do folder. Neu khong do duoc thi KHONG chay mailbox do -- chay mu
-    # se rat de keo ca [Gmail]/All Mail sang, lam phinh gap doi/gap ba dung luong.
-    say("[1/2] Do folder Gmail...")
+    # se rat de keo ca folder ao (All Mail cua Gmail, Sync Issues cua Exchange)
+    # sang, lam phinh dung luong hoac do rac vao hop thu moi.
+    say("[1/2] Do folder %s..." % src_name)
     plans: Dict[str, Plan] = {}
     predelivered: List[Result] = []
+    dest_layout = DestLayout(cfg)
     with futures.ThreadPoolExecutor(max_workers=min(8, len(users))) as pool:
-        for user, plan, err in pool.map(lambda u: _discover_one(cfg, u), users):
+        for user, plan, err in pool.map(
+                lambda u: _discover_one(cfg, u, dest_layout), users):
             if plan is None:
                 say("  LOI  %-32s %s" % (user.src_user, err))
                 r = Result(user=user, mode=mode, started=time.time())
@@ -358,6 +469,8 @@ def cmd_sync(args, cfg: Config) -> int:
                     say("       CANH BAO: %d folder do chung vao '%s': %s"
                         % (len(sources), dest, ", ".join(f.display for f in sources)))
                     say("       Xem './mm.py discover' de biet cach tach rieng.")
+
+    _print_dest_layout(dest_layout)
 
     todo = [u for u in users if u.src_user in plans]
     if not todo:
@@ -400,10 +513,10 @@ def cmd_sync(args, cfg: Config) -> int:
         say("de tiep tuc -- imapsync bo qua mail da co san nen khong nhan doi.")
         return 130
 
-    rows = report.rows_from_results(results)
+    rows = report.rows_from_results(results, cfg)
     say("")
     if mode == MODE_SIZES:
-        _print_sizes(results)
+        _print_sizes(results, cfg)
     else:
         report.print_table(rows, emit=say)
         report.print_summary(rows, emit=say)
@@ -421,15 +534,23 @@ def cmd_sync(args, cfg: Config) -> int:
     return 0 if all(r.ok for r in results) else 1
 
 
-def _print_sizes(results: List[Result]) -> None:
-    """Bao cao dung luong, kem tran tren so ngay theo gioi han Gmail cong bo.
+def _print_sizes(results: List[Result], cfg: Config) -> None:
+    """Bao cao dung luong, kem tran tren so ngay neu nguon co han muc/ngay.
 
-    Cot "Ngay toi da" la kich ban XAU NHAT, khong phai du bao. Do thuc te cho
-    thay co account Workspace tai lien mach vuot xa 2500 MB ma khong bi chan,
-    nen thuong xong som hon nhieu. Xem ghi chu in kem ben duoi bang.
+    Cot "Ngay toi da" chi hien khi nha cung cap nguon that su cong bo mot han
+    muc tai ve theo ngay -- hien nay chi Gmail. Voi cac nguon khac, con so do
+    khong ton tai: cai chan ho la so ket noi dong thoi, khong phai dung luong.
+
+    Ngay ca voi Gmail day cung la kich ban XAU NHAT chu khong phai du bao. Do
+    thuc te cho thay account Workspace tai lien mach vuot xa 2500 MB ma khong
+    bi chan, nen thuong xong som hon nhieu.
     """
-    header = "%-34s %10s %12s %10s %10s" % ("Mailbox", "Mail", "Dung luong",
-                                            "Mail lon nhat", "Ngay toi da")
+    provider = cfg.source.provider
+    limit = provider.daily_limit
+    header = "%-34s %10s %12s %13s" % ("Mailbox", "Mail", "Dung luong",
+                                       "Mail lon nhat")
+    if limit:
+        header += " %10s" % "Ngay toi da"
     say(header)
     say("-" * len(header))
     total_bytes = total_msgs = 0
@@ -440,26 +561,27 @@ def _print_sizes(results: List[Result]) -> None:
             continue
         size = r.get("source_bytes")
         msgs = r.get("source_messages")
-        days = _days_needed(size)
         total_bytes += size
         total_msgs += msgs
-        max_days = max(max_days, days)
-        say("%-34s %10s %12s %10s %10s"
-            % (r.user.src_user, "{:,}".format(msgs).replace(",", "."),
-               report.human_bytes(size), report.human_bytes(r.get("source_biggest")),
-               days))
+        line = ("%-34s %10s %12s %13s"
+                % (r.user.src_user, "{:,}".format(msgs).replace(",", "."),
+                   report.human_bytes(size),
+                   report.human_bytes(r.get("source_biggest"))))
+        if limit:
+            days = _days_needed(size, limit)
+            max_days = max(max_days, days)
+            line += " %10s" % days
+        say(line)
     say("")
     say("Tong: %s mail, %s."
         % ("{:,}".format(total_msgs).replace(",", "."), report.human_bytes(total_bytes)))
     say("")
-    # Google cong bo con so nay la "2500 MB", viet y nguyen de doi chieu duoc
-    # voi tai lieu cua ho thay vi quy ra GiB.
-    say("Cot 'Ngay toi da' tinh theo gioi han Google cong bo: 2500 MB tai ve")
-    say("moi ngay cho MOI account. Gioi han tinh rieng tung account nen chay")
-    say("nhieu mailbox song song KHONG bi cong don.")
-    say("")
-    say("Day la TRAN TREN, khong phai du bao. Thuc te da gap account Workspace")
-    say("tai lien mach vuot xa muc do ma khong bi chan, xong som hon nhieu.")
+    if provider.daily_limit_note:
+        say(report._wrap(provider.daily_limit_note))
+        say("")
+    if limit:
+        say("Day la TRAN TREN, khong phai du bao. Thuc te da gap account tai lien")
+        say("mach vuot xa muc do ma khong bi chan, xong som hon nhieu.")
     say("Muon biet con bao lau that su thi xem toc do trong log luc dang chay:")
     say("  tail -1 logs/<mailbox>.sync.*.log")
     say("dong do co san so mail/s va tong da chep.")
@@ -470,22 +592,27 @@ def _print_sizes(results: List[Result]) -> None:
         say("no chi lam tiep phan con thieu.")
 
 
-def _days_needed(size_bytes: int) -> int:
-    if size_bytes <= 0:
+def _days_needed(size_bytes: int, daily_limit: int) -> int:
+    if size_bytes <= 0 or daily_limit <= 0:
         return 0
-    return -(-size_bytes // GMAIL_DAILY_LIMIT)      # lam tron len
+    return -(-size_bytes // daily_limit)      # lam tron len
+
 
 
 # --------------------------------------------------------------------------- #
 # verify
 # --------------------------------------------------------------------------- #
 
-def _verify_one(cfg: Config, user: User, cap: int) -> verify.UserCheck:
+def _verify_one(cfg: Config, user: User, cap: int,
+                dest: Optional[DestLayout] = None) -> verify.UserCheck:
     check = verify.UserCheck(src_user=user.src_user, dst_user=user.dst_user)
     src_conn = dst_conn = None
     try:
         folders = list_folders(cfg, user)
-        plan = build_plan(folders, cfg.sync)
+        # Phai dung cung ke hoach nhu luc sync, khong thi verify se di tim
+        # folder o sai ten va bao "thieu ben dich" cho ca hop thu day du.
+        plan = build_plan(folders, cfg.sync, cfg.source.provider,
+                          dest=dest.get(user) if dest is not None else None)
         src_conn = open_connection(cfg, user, "source")
         dst_conn = open_connection(cfg, user, "dest")
 
@@ -493,12 +620,12 @@ def _verify_one(cfg: Config, user: User, cap: int) -> verify.UserCheck:
         for folder, dest_name in pairs:
             fc = verify.FolderCheck(source_folder=folder.display, dest_folder=dest_name)
             try:
-                # Lay mau ben Gmail (dat: bi bop bang thong va bi dem lenh),
-                # nhung lay HET ben IceWarp (re: server nha, khong han muc).
+                # Lay mau ben nguon (dat: co the bi bop bang thong va bi dem
+                # lenh), nhung lay HET ben dich (re: server nha, khong han muc).
                 #
                 # Truoc day lay mau ca hai dau voi cung `cap`. Hai folder gan
                 # nhu khong bao gio cung so luong, va thu tu cung khac nhau
-                # (IceWarp xep theo thu tu imapsync chep sang), nen hai mau
+                # (ben dich xep theo thu tu imapsync chep sang), nen hai mau
                 # roi vao hai tap mail khac nhau. Phan khong giao nhau bi tinh
                 # thanh "thieu ben dich" -- co lan bao thieu 504 mail tren mot
                 # hop thu ma imapsync da xac nhan la day du.
@@ -531,7 +658,7 @@ def _fmt_epoch(epoch: float) -> str:
 
 
 def cmd_verify(args, cfg: Config) -> int:
-    users = filter_users(load_users(args.users), args.only)
+    users = filter_users(_users(args, cfg), args.only)
     cap = args.sample
 
     # verify la bang chung cuoi cung truoc cutover, nen phai luu lai duoc.
@@ -549,13 +676,16 @@ def cmd_verify(args, cfg: Config) -> int:
 
     try:
         out("Doi chieu ngay thang cua mail giua hai dau.")
-        out("Lay mau toi da %d mail moi folder o ben Gmail, doi chieu voi toan "
-            "bo folder ben IceWarp." % cap)
+        out("Lay mau toi da %d mail moi folder o ben %s, doi chieu voi toan "
+            "bo folder ben %s."
+            % (cap, cfg.source.provider.name, cfg.dest.provider.name))
         out("Sai lech duoi %ds coi nhu khop.\n" % verify.TOLERANCE_SECONDS)
 
+        dest_layout = DestLayout(cfg)
         checks: List[verify.UserCheck] = []
         with futures.ThreadPoolExecutor(max_workers=min(4, max(1, len(users)))) as pool:
-            for check in pool.map(lambda u: _verify_one(cfg, u, cap), users):
+            for check in pool.map(
+                    lambda u: _verify_one(cfg, u, cap, dest_layout), users):
                 checks.append(check)
                 if check.error:
                     out("LOI  %-32s %s" % (check.src_user, check.error))
@@ -572,8 +702,8 @@ def cmd_verify(args, cfg: Config) -> int:
                             % (fc.source_folder, fc.mismatched, fc.compared))
                         for msgid, src_e, dst_e in fc.samples:
                             out("         %s" % msgid[:60])
-                            out("           Gmail  : %s" % _fmt_epoch(src_e))
-                            out("           IceWarp: %s" % _fmt_epoch(dst_e))
+                            out("           nguon: %s" % _fmt_epoch(src_e))
+                            out("           dich : %s" % _fmt_epoch(dst_e))
 
         total_cmp = sum(c.compared for c in checks)
         total_bad = sum(c.mismatched for c in checks)
@@ -598,10 +728,12 @@ def cmd_verify(args, cfg: Config) -> int:
             out("")
             out("Ngay KHONG duoc giu nguyen. Kiem tra theo thu tu nay:")
             out("  1. Xem log sync co dong 'Info: turned ON syncinternaldates' khong.")
-            out("  2. Neu co ma van lech, IceWarp dang bo qua ngay trong lenh APPEND.")
+            out("  2. Neu co ma van lech, %s dang bo qua ngay trong lenh APPEND."
+                % cfg.dest.provider.name)
             out("     Doi date_source = header trong config.ini roi sync lai mailbox do")
             out("     bang: ./mm.py sync --only <dia chi>")
-            out("  3. Neu van lech, hoi nha cung cap IceWarp ve viec server ghi de")
+            out("  3. Neu van lech, hoi nha cung cap %s ve viec server ghi de"
+                % cfg.dest.provider.name)
             out("     INTERNALDATE luc APPEND.")
         elif failed:
             out("Ngay khop het, nhung co folder khong doi chieu duoc (xem o tren).")
@@ -663,6 +795,64 @@ def cmd_report(args, cfg: Config) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# providers
+# --------------------------------------------------------------------------- #
+
+def cmd_providers(args, cfg: Optional[Config]) -> int:
+    """Liet ke cac nha cung cap tool biet, kem viec phai chuan bi truoc."""
+    wanted = (args.name or "").strip()
+    if wanted:
+        try:
+            chosen = [providers.get(wanted)]
+        except ValueError as exc:
+            say("Loi: %s" % exc)
+            return 2
+    else:
+        chosen = providers.all_providers()
+
+    if not wanted:
+        say("Dat gia tri nay vao 'provider =' trong [source] hoac [dest] cua")
+        say("config.ini. Xem chi tiet mot cai: ./mm.py providers <ten>\n")
+        say("%-10s %-34s %s" % ("ten", "nha cung cap", "host mac dinh"))
+        say("-" * 74)
+        for p in chosen:
+            say("%-10s %-34s %s" % (p.key, p.name, p.host or "(phai tu dien)"))
+        say("")
+        say("Nguon nao chua co trong danh sach thi dung provider = imap va dien")
+        say("host tay; tool van do folder theo co SPECIAL-USE va theo ten.")
+        return 0
+
+    for p in chosen:
+        say("=== %s (provider = %s) ===" % (p.name, p.key))
+        say("host mac dinh : %s" % (p.host or "(phai tu dien trong config.ini)"))
+        say("cong          : %d (ssl=%s)" % (p.port, p.ssl))
+        # 'master' co trong danh sach de config nhan ra, nhung phan dang nhap
+        # bang tai khoan quan tri chua lam -- noi ro thay vi de nguoi doc tuong
+        # la dung duoc ngay.
+        say("xac thuc      : %s"
+            % ", ".join(m + " (chua ho tro)" if m == providers.AUTH_MASTER else m
+                        for m in p.auth_modes))
+        if p.aliases:
+            say("goi khac      : %s" % ", ".join(p.aliases))
+        if p.max_connections:
+            say("ket noi/account: toi da %d cung luc" % p.max_connections)
+        say("han muc/ngay  : %s"
+            % (report.human_bytes(p.daily_limit) if p.daily_limit else "khong cong bo"))
+        if p.daily_limit_note:
+            say("                %s" % report._wrap(p.daily_limit_note, indent=16))
+        if p.folders:
+            say("ten folder khi lam dich:")
+            for role, name in sorted(p.folders.items()):
+                say("    %-8s -> %s" % (role, name))
+        if p.skip_names:
+            say("folder khong phai mail (tu bo qua): %d loai" % len(p.skip_names))
+        say("")
+        _print_prep(p)
+        say("")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # web
 # --------------------------------------------------------------------------- #
 
@@ -677,12 +867,20 @@ def cmd_web(args, cfg: Config) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mm",
-        description="Migrate mail Google/Gmail -> IceWarp bang imapsync.",
+        description="Migrate mail giua cac nha cung cap IMAP bang imapsync. "
+                    "Chay 'mm providers' de xem cac nguon duoc ho tro.",
     )
     p.add_argument("--config", default="config.ini", help="mac dinh: config.ini")
     p.add_argument("--users", default="users.csv", help="mac dinh: users.csv")
     p.add_argument("--version", action="version", version="migrate-mail " + __version__)
     sub = p.add_subparsers(dest="command")
+
+    pr = sub.add_parser("providers", help="cac nguon/dich duoc ho tro va cach chuan bi")
+    pr.add_argument("name", nargs="?", default="",
+                    help="xem chi tiet mot cai, vd: m365")
+    # Lenh nay phai chay duoc TRUOC khi co config.ini: nguoi dung can biet
+    # dien gi vao 'provider =' truoc da.
+    pr.set_defaults(func=cmd_providers, needs_config=False)
 
     d = sub.add_parser("doctor", help="kiem tra moi truong truoc khi lam gi khac")
     d.set_defaults(func=cmd_doctor)
@@ -691,19 +889,19 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("--only", default="", help="chi chay vai dia chi, cach nhau bang dau phay")
     pf.set_defaults(func=cmd_preflight)
 
-    dc = sub.add_parser("discover", help="xem folder Gmail va ke hoach chuyen doi")
+    dc = sub.add_parser("discover", help="xem folder ben nguon va ke hoach chuyen doi")
     dc.add_argument("--only", default="")
     dc.add_argument("--dest", action="store_true",
-                    help="liet ke folder co san ben IceWarp thay vi ben Gmail")
+                    help="liet ke folder co san ben dich thay vi ben nguon")
     dc.set_defaults(func=cmd_discover)
 
     s = sub.add_parser("sync", help="chay migration")
     s.add_argument("--only", default="")
-    s.add_argument("--dry", action="store_true", help="chay thu, khong ghi gi vao IceWarp")
+    s.add_argument("--dry", action="store_true", help="chay thu, khong ghi gi vao dich")
     s.add_argument("--sizes", action="store_true",
-                   help="chi dem dung luong ben Gmail va uoc luong so ngay can chay")
+                   help="chi dem dung luong ben nguon va uoc luong so ngay can chay")
     s.add_argument("--folders-only", action="store_true",
-                   help="chi tao cay folder ben IceWarp, khong chuyen mail; "
+                   help="chi tao cay folder ben dich, khong chuyen mail; "
                         "chay truoc --dry de lan chay khan cho so lieu day du")
     s.add_argument("--workers", type=int, default=0, help="ghi de [sync] workers")
     s.add_argument("--since-days", type=int, default=0,
@@ -747,11 +945,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if isinstance(getattr(args, "only", None), str):
         args.only = [s for s in args.only.split(",") if s.strip()]
 
-    try:
-        cfg = load_config(Path(args.config))
-    except Exception as exc:
-        say("Loi config: %s" % exc)
-        return 2
+    cfg = None
+    if getattr(args, "needs_config", True):
+        try:
+            cfg = load_config(Path(args.config))
+        except Exception as exc:
+            say("Loi config: %s" % exc)
+            return 2
 
     try:
         return args.func(args, cfg)

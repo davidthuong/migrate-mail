@@ -39,6 +39,7 @@ FLAGS = [
     "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders",
     "--justfoldersizes",
     "--syncinternaldates", "--idatefromheader", "--version", "--help",
+    "--oauthaccesstoken1", "--oauthaccesstoken2",
 ]
 
 
