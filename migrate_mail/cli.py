@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures as futures
+import os
 import sys
 from contextlib import contextmanager
 import threading
@@ -12,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, providers, report, verify
+from . import __version__, mailboxes, providers, report, verify
 from .config import Config, load_config
 from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
                        SPECIAL_SENT, SPECIAL_TRASH, DiscoveryError, Plan,
@@ -181,6 +182,115 @@ def _print_prep(provider, side: str = "") -> None:
         say("Chuan bi truoc khi dung:")
     for step in provider.prep:
         say("  - %s" % report._wrap(step, indent=4))
+
+
+# --------------------------------------------------------------------------- #
+# mkusers
+# --------------------------------------------------------------------------- #
+
+# So dong dia chi in ra de nguoi chay soi bang mat. Loi hay gap nhat khong
+# phai thieu mailbox ma la dia chi dich sai domain, va cho do chi can nhin
+# vai dong dau la thay.
+_SAMPLE_ROWS = 10
+
+
+def cmd_mkusers(args, cfg: Config) -> int:
+    out = Path(args.out or args.users)
+    if out.exists() and not args.force:
+        say("Loi: %s da ton tai." % out)
+        say("File nay thuong dang chua mat khau that. Ghi ra cho khac bang")
+        say("--out, hoac them --force neu chac chan muon thay the.")
+        return 2
+    if args.blank_passwords and args.dst_password:
+        say("Loi: --blank-passwords va --dst-password nguoc nhau, chon mot cai.")
+        return 2
+
+    if args.input == "-":
+        raw = sys.stdin.buffer.read()
+        label = "(stdin)"
+    else:
+        try:
+            raw = Path(args.input).read_bytes()
+        except OSError as exc:
+            say("Loi: khong doc duoc %s: %s" % (args.input, exc))
+            return 2
+        label = str(args.input)
+
+    parsed = mailboxes.parse(
+        mailboxes.decode(raw),
+        keep_all_types=args.keep_all_types,
+        domains=[d for d in (args.domain or "").split(",") if d.strip()])
+
+    say("Doc %s: %d dong du lieu%s"
+        % (label, parsed.rows_read,
+           (", cot dia chi '%s'" % parsed.address_column)
+           if parsed.address_column else ""))
+    say("")
+
+    if parsed.skipped:
+        say("BO QUA %d dong:" % len(parsed.skipped))
+        for who, reason in parsed.skipped:
+            say("    - %-36s %s" % (who, reason))
+        say("")
+    if not parsed.mailboxes:
+        say("Khong con mailbox nao sau khi loc, khong ghi file.")
+        return 1
+
+    say("LAY %d mailbox:" % len(parsed.mailboxes))
+    for kind, count in parsed.kind_counts():
+        say("    %-30s %d" % (kind, count))
+    say("")
+
+    # Cot src_password luon de trong: Get-Mailbox khong cho ra mat khau cua
+    # user. Voi nguon chay OAuth2 thi nhu vay la du (load_users cho phep trong),
+    # voi nguon chay password thi phai dien tay -- noi ro o cuoi lenh.
+    rows = mailboxes.build_rows(
+        parsed.mailboxes, dst_domain=args.dst_domain,
+        dst_password=args.dst_password,
+        blank_passwords=args.blank_passwords)
+
+    say("Dia chi ben dich (%s):"
+        % ("doi domain sang @%s" % args.dst_domain.strip().lstrip("@")
+           if args.dst_domain else "giu nguyen dia chi nguon"))
+    for row in rows[:_SAMPLE_ROWS]:
+        say("    %-38s -> %s" % (row[0], row[2]))
+    if len(rows) > _SAMPLE_ROWS:
+        say("    ... va %d dong nua" % (len(rows) - _SAMPLE_ROWS))
+
+    if parsed.warnings:
+        say("")
+        for warn in parsed.warnings:
+            say("CANH BAO: %s" % report._wrap(warn, indent=10))
+
+    notes = [
+        "Sinh boi mm.py mkusers luc %s" % time.strftime("%Y-%m-%d %H:%M"),
+        "Nguon danh sach: %s (%d mailbox)" % (label, len(rows)),
+        "",
+    ]
+    mailboxes.write_users(out, rows, notes)
+    say("")
+    say("Da ghi %d dong vao %s" % (len(rows), out))
+    if os.name == "posix":
+        say("Da dat quyen 600 cho file nay.")
+
+    say("")
+    if args.blank_passwords:
+        say("Cot dst_password dang de trong: users.csv chua doc duoc, phai dien")
+        say("vao truoc khi chay preflight.")
+    elif args.dst_password:
+        say("Moi mailbox dich dung chung mot mat khau. Nho doi lai sau cutover.")
+    else:
+        say("Mat khau ben dich do tool sinh ra. Phai tao mailbox ben dich VOI")
+        say("DUNG nhung mat khau nay, hoac sua lai cot dst_password cho khop.")
+    if cfg.source.uses_oauth:
+        say("Nguon chay OAuth2 nen cot src_password de trong la dung.")
+    else:
+        say("Nguon dang auth = %s: phai dien cot src_password tay, Get-Mailbox"
+            % cfg.source.auth)
+        say("khong cho ra mat khau cua user.")
+    say("")
+    say("Buoc tiep: ./mm.py preflight")
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -884,6 +994,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("doctor", help="kiem tra moi truong truoc khi lam gi khac")
     d.set_defaults(func=cmd_doctor)
+
+    mk = sub.add_parser(
+        "mkusers",
+        help="sinh users.csv tu danh sach mailbox ben nguon (Get-Mailbox)",
+        description="Doc file danh sach mailbox xuat tu he thong nguon roi "
+                    "sinh users.csv. Nhan CSV cua Export-Csv (ke ca ban UTF-16 "
+                    "hoac con dong #TYPE), hoac danh sach dia chi tho moi dong "
+                    "mot cai. Dung '-' de doc tu stdin.")
+    mk.add_argument("input", help="file danh sach mailbox, hoac '-' cho stdin")
+    mk.add_argument("--out", default="",
+                    help="ghi ra duong dan nay thay vi --users (users.csv)")
+    mk.add_argument("--force", action="store_true",
+                    help="cho phep ghi de file da co -- can nho file cu co the "
+                         "dang chua mat khau that")
+    mk.add_argument("--dst-domain", default="",
+                    help="doi domain ben dich, vd congty.vn; mac dinh giu "
+                         "nguyen dia chi nguon")
+    mk.add_argument("--domain", default="",
+                    help="chi lay mailbox thuoc domain nay, nhieu cai cach "
+                         "nhau bang dau phay")
+    mk.add_argument("--dst-password", default="",
+                    help="dung chung mot mat khau cho moi mailbox dich; "
+                         "mac dinh sinh ngau nhien tung cai")
+    mk.add_argument("--blank-passwords", action="store_true",
+                    help="de trong cot dst_password de dien tay sau")
+    mk.add_argument("--keep-all-types", action="store_true",
+                    help="giu ca phong hop, thiet bi va hop thu he thong")
+    mk.set_defaults(func=cmd_mkusers)
 
     pf = sub.add_parser("preflight", help="thu dang nhap ca hai dau cho tung mailbox")
     pf.add_argument("--only", default="", help="chi chay vai dia chi, cach nhau bang dau phay")

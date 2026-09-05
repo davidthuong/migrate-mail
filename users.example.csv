@@ -1,5 +1,10 @@
 # Copy thanh users.csv roi dien. Nho: chmod 600 users.csv
 #
+# Neu ben nguon xuat duoc danh sach mailbox (Get-Mailbox cua Microsoft 365,
+# Exchange), khong can go tay file nay:
+#
+#   ./mm.py mkusers mailboxes.csv --dst-domain congty.vn
+#
 # src_password  = mat khau hop thu ben NGUON. Tuy nha cung cap:
 #
 #   Gmail / Workspace  App Password 16 ky tu (KHONG phai mat khau dang nhap).

@@ -169,6 +169,53 @@ bị từ chối — đó là cách nhanh nhất biết secret hết hạn hay t
 Tenant nào còn bật basic auth thì cứ để `auth = password` và điền mật khẩu như
 bình thường.
 
+Bật IMAP cho cả tenant một lượt, thay vì từng mailbox:
+
+```powershell
+Get-Mailbox -ResultSize Unlimited | Set-CASMailbox -ImapEnabled $true
+```
+
+### Microsoft 365: cái gì không đi qua IMAP
+
+Tool này chuyển **mail**. Với một tenant Microsoft 365 thì "mail" ít hơn thứ
+khách hàng hình dung khi họ nói *"chuyển hết Microsoft 365 sang"*. Đây là danh
+sách để nói trước khi nhận việc — không phải để giải thích sau cutover.
+
+**Đi qua được:** toàn bộ mail trong mailbox chính của user mailbox và shared
+mailbox — cấu trúc folder lồng nhau, ngày tháng, trạng thái đã đọc, cờ, thư đã
+trả lời. Shared mailbox chỉ là một dòng như mọi dòng khác trong `users.csv`,
+miễn là đã bật IMAP cho nó.
+
+**Không đi qua được:**
+
+| Không lấy được | Vì sao |
+|---|---|
+| Calendar, Contacts, Tasks, Notes | Exchange không bày các folder này ra đường IMAP (khác Zimbra và IceWarp) |
+| **Online Archive** (In-Place Archive) | Là một mailbox riêng, không có endpoint IMAP |
+| Public folder | Không truy cập được bằng IMAP |
+| Rule, chữ ký, out-of-office, category, quyền delegate | Nằm ở tầng Exchange, không ở tầng message |
+| Recoverable Items (thùng rác cấp hai) | Không nhìn thấy qua IMAP |
+| Room / Equipment mailbox | Chỉ có lịch, không có mail — `mkusers` tự bỏ qua |
+| Microsoft 365 Group, Team site mailbox | IMAP không vào được |
+| OneDrive, SharePoint, Teams | Khác hệ hoàn toàn |
+
+**Online Archive là cái hay bị quên nhất**, vì nó không hiện ra ở bất kỳ bước
+nào của tool: mailbox archive không nằm trên đường IMAP nên `discover` cũng
+không thấy. Đếm xem có bao nhiêu mailbox bị ảnh hưởng *trước* khi chạy:
+
+```powershell
+Get-Mailbox -ResultSize Unlimited | Where-Object { $_.ArchiveStatus -eq "Active" } | Select-Object PrimarySmtpAddress, ArchiveStatus
+```
+
+Cách xử lý là kéo nội dung archive về hộp thư chính trước khi sync (nếu quota
+bên đích đủ chỗ) — sau đó nó là mail bình thường và đi theo lần sync như mọi
+folder khác. Nếu không kéo về được thì phải export riêng bằng Outlook hoặc
+Graph API, và nói rõ với khách rằng phần đó nằm ngoài lần migrate này.
+
+Nếu để `mkusers` sinh `users.csv` từ output `Get-Mailbox` (xem
+[Cấu hình](#cấu-hình)) thì cột `ArchiveStatus` được đọc luôn và số mailbox có
+archive được in ra ngay lúc đó.
+
 ### cPanel / DirectAdmin / Plesk (Dovecot), Courier
 
 Hosting kiểu Maildir++ để mọi folder dưới tiền tố `INBOX.` với dấu phân cách là
@@ -259,6 +306,83 @@ khẩu của user, và tool cũng không cần.
 chọn đều có chú thích trong `config.example.ini`.
 
 > `config.ini` và `users.csv` đã nằm trong `.gitignore`. Đừng commit chúng.
+
+### Sinh `users.csv` từ danh sách mailbox của nguồn
+
+Với tenant vài chục mailbox, gõ tay `users.csv` là chỗ dễ sai nhất trong cả
+cuộc migrate: sai một ký tự trong địa chỉ thì mailbox đó **im lặng** không được
+chuyển, và thường không ai phát hiện ra cho đến sau cutover. Danh sách đúng lấy
+từ chính hệ thống nguồn — với Microsoft 365 / Exchange:
+
+```powershell
+Get-Mailbox -ResultSize Unlimited | Select-Object PrimarySmtpAddress,DisplayName,RecipientTypeDetails,ArchiveStatus | Export-Csv -NoTypeInformation -Encoding UTF8 mailboxes.csv
+```
+
+Rồi đưa file đó cho `mkusers`:
+
+```bash
+python3 mm.py mkusers mailboxes.csv --dst-domain congty.vn
+```
+
+```
+Doc mailboxes.csv: 6 dong du lieu, cot dia chi 'PrimarySmtpAddress'
+
+BO QUA 2 dong:
+    - phonghop1@cu.com                     phong hop - chi co lich, khong co mail
+    - DiscoverySearch@cu.onmicrosoft.com   hop thu he thong cua eDiscovery
+
+LAY 3 mailbox:
+    UserMailbox                    2
+    SharedMailbox                  1
+
+Dia chi ben dich (doi domain sang @congty.vn):
+    an.nguyen@cu.com                       -> an.nguyen@congty.vn
+    binh.tran@cu.com                       -> binh.tran@congty.vn
+    ketoan@cu.com                          -> ketoan@congty.vn
+
+CANH BAO: 1 mailbox co Online Archive (an.nguyen@cu.com). Archive la mailbox
+          rieng, khong co duong IMAP nen tool KHONG chuyen duoc phan do --
+          phai keo ve hop thu chinh truoc khi sync, hoac xuat rieng.
+
+Da ghi 3 dong vao users.csv
+```
+
+Ba việc `mkusers` làm mà cắt/paste không làm được:
+
+- **Bỏ loại mailbox không chứa mail** theo cột `RecipientTypeDetails`: phòng
+  họp, thiết bị, hộp thư hệ thống (Discovery, Arbitration, Audit), Microsoft
+  365 Group, public folder mailbox. Chỉ bỏ những loại **biết chắc** là không có
+  mail — gặp loại lạ thì vẫn giữ và nói ra, vì bỏ nhầm một mailbox thật thì
+  không ai thấy, còn giữ nhầm một mailbox rỗng thì `preflight` báo ngay.
+- **Đếm mailbox có Online Archive** từ cột `ArchiveStatus`. Đây là lúc duy nhất
+  con số đó xuất hiện trong cả quy trình — xem
+  [phần trên](#microsoft-365-cái-gì-không-đi-qua-imap).
+- **Đọc được file bất kể PowerShell ghi ra kiểu gì**: còn dòng `#TYPE` vì quên
+  `-NoTypeInformation`, file UTF-16 của `Out-File` (đọc bằng UTF-8 không báo lỗi
+  mà ra rác), dấu phân cách `;` của locale châu Âu, cột đặt tên khác
+  (`EmailAddress`, `UserPrincipalName`), hoặc chỉ là danh sách địa chỉ trơ mỗi
+  dòng một cái. Dùng `-` để đọc từ stdin.
+
+Mật khẩu bên đích mặc định được **sinh ngẫu nhiên cho từng mailbox** (16 ký tự,
+bỏ các ký tự dễ đọc lẫn như `0/O`, `1/l/I`) — tạo mailbox bên đích với đúng
+những mật khẩu đó, hoặc đổi lại cột `dst_password` cho khớp.
+
+| | |
+|---|---|
+| `--dst-domain congty.vn` | đổi domain bên đích; mặc định giữ nguyên địa chỉ nguồn |
+| `--domain cu.com` | chỉ lấy mailbox thuộc domain này (tenant nhiều domain) |
+| `--dst-password X` | dùng chung một mật khẩu cho mọi mailbox |
+| `--blank-passwords` | để trống cột `dst_password`, điền tay sau |
+| `--keep-all-types` | giữ cả phòng họp, thiết bị, hộp thư hệ thống |
+| `--out duong/dan.csv` | ghi ra chỗ khác thay vì `users.csv` |
+| `--force` | cho phép ghi đè file đã có |
+
+`mkusers` **không ghi đè** `users.csv` nếu file đã tồn tại — file cũ thường
+đang chứa mật khẩu thật. Muốn thay thế thì thêm `--force`.
+
+Cột `src_password` luôn để trống: `Get-Mailbox` không cho ra mật khẩu của user.
+Với nguồn chạy `auth = oauth2` thì như vậy là đủ; với nguồn chạy
+`auth = password` thì phải điền cột đó tay trước khi `preflight`.
 
 ---
 
@@ -705,6 +829,7 @@ chạy cũ mất gợi ý (số liệu vẫn còn), và tool quay về dùng g�
 ```bash
 python3 mm.py providers                            # nguồn/đích được hỗ trợ
 python3 mm.py providers dovecot                    # chi tiết một cái
+python3 mm.py mkusers mailboxes.csv                # sinh users.csv từ Get-Mailbox
 python3 mm.py sync --only an@cu.com,binh@cu.com   # chỉ vài mailbox
 python3 mm.py sync --resume                        # bỏ qua mailbox đã xong
 python3 mm.py sync --workers 5                     # ghi đè số luồng song song
@@ -795,6 +920,7 @@ migrate_mail/
   oauth.py                 lấy và làm mới OAuth2 token của Microsoft
   config.py                đọc config.ini
   users.py                 đọc users.csv, chuẩn hoá app password
+  mailboxes.py             đọc danh sách mailbox của nguồn -> sinh users.csv
   discover.py              đọc folder bên nguồn, dựng kế hoạch chuyển đổi
   imaputf7.py              giải mã tên folder để hiển thị
   runner.py                dựng và chạy lệnh imapsync, đọc kết quả
@@ -804,7 +930,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     357 test, không chạm mạng
+tests/                     403 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 
@@ -830,7 +956,9 @@ không cần mạng và không cần tài khoản thật.
   và dịch vụ hỗ trợ. `install.sh` lấy mã nguồn từ repo GitHub chính thức.
 - Tool này chỉ chuyển **mail**. Lịch, danh bạ, task không đi qua IMAP — phải
   export/import riêng. Với Zimbra thì các folder đó *có* hiện trên IMAP nhưng
-  nội dung không dùng được bên đích, nên tool bỏ qua chúng.
+  nội dung không dùng được bên đích, nên tool bỏ qua chúng. Danh sách đầy đủ
+  những gì **không** đi qua được với một tenant Microsoft 365 nằm ở
+  [phần này](#microsoft-365-cái-gì-không-đi-qua-imap).
 - Bộ lọc, chữ ký, chuyển tiếp bên nguồn cũng không được chuyển; phải tạo lại
   thủ công trên server đích.
 - `auth = master` (đăng nhập bằng tài khoản quản trị: Dovecot master user,
