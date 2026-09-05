@@ -44,7 +44,11 @@ PAGE = r"""<!doctype html>
  button.danger{border-color:var(--err);color:var(--err)}
  .sep{width:1px;height:22px;background:var(--line);margin:0 .35rem}
  .scope{color:var(--muted);font-size:13px;margin-left:auto}
- table{width:100%;border-collapse:collapse;font-size:13px}
+ /* 10 cot khong bop vua man hep duoc. Khong co khung cuon nay thi
+    .card{overflow:hidden} cat cut tu cot "Ket qua" tro di -- ke ca nut xoa
+    va dau chi sang muc "Can xu ly" -- ma khong con cach nao voi toi. */
+ .tablewrap{overflow-x:auto}
+ table{width:100%;min-width:880px;border-collapse:collapse;font-size:13px}
  th,td{padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--line);
        vertical-align:top}
  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;
@@ -57,8 +61,18 @@ PAGE = r"""<!doctype html>
  .b-ok{color:var(--ok);border-color:var(--ok)}
  .b-err{color:var(--err);border-color:var(--err)}
  .b-idle{color:var(--muted);border-color:var(--line)}
- .tip{margin-top:.3rem;padding:.3rem .5rem;background:var(--warnbg);
-      border-left:3px solid var(--warn);font-size:12px;border-radius:0 4px 4px 0}
+ /* Goi y sua loi la van xuoi dai. De trong o "Ghi chu" thi dong bang bi keo
+    cao va cac cot ben trai bo trong ca mang; o man hep thi cot bi bop lai den
+    muc khong doc duoc. Cho no card rieng ben duoi bang. */
+ .more{font-size:11.5px;color:var(--warn);white-space:nowrap}
+ #fixcount{text-transform:none;font-weight:400;color:var(--muted);margin-left:.4rem}
+ .fix{padding:.7rem 1rem;border-left:3px solid var(--err);
+      border-bottom:1px solid var(--line)}
+ .fix:last-child{border-bottom:none}
+ .fix .who{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+ .fix .who b{font-weight:600}
+ .fix p{margin:.4rem 0 0;font-size:13px;line-height:1.6;max-width:74ch;
+        color:var(--muted)}
  pre{margin:0;padding:1rem;background:var(--code);color:var(--codeink);
      font:12.5px/1.55 ui-monospace,"SFMono-Regular",Consolas,monospace;
      overflow:auto;max-height:26rem;white-space:pre-wrap;word-break:break-word}
@@ -109,6 +123,7 @@ PAGE = r"""<!doctype html>
       <button data-act="verify">Đối chiếu ngày</button>
       <span class="scope" id="scope"></span>
     </div>
+    <div class="tablewrap">
     <table>
       <thead><tr>
         <th style="width:28px"><input type="checkbox" id="all" title="Chọn tất cả"></th>
@@ -119,6 +134,12 @@ PAGE = r"""<!doctype html>
       </tr></thead>
       <tbody id="rows"><tr><td colspan="10" class="empty">Đang tải…</td></tr></tbody>
     </table>
+    </div>
+  </section>
+
+  <section class="card" id="fix" hidden>
+    <h2>Cần xử lý <span id="fixcount"></span></h2>
+    <div id="fixlist"></div>
   </section>
 
   <section class="card">
@@ -186,10 +207,11 @@ function renderRows() {
     return;
   }
   box.innerHTML = state.mailboxes.map((m) => {
-    const tips = (m.goi_y || []).map((t) =>
-      '<div class="tip">' + esc(t) + "</div>").join("");
+    // Goi y day du nam o card "Can xu ly"; trong bang chi de mot dau chi cho.
+    const more = (m.goi_y || []).length
+      ? ' <span class="more">↓ cần xử lý</span>' : "";
     const warn = (!m.has_src_password || !m.has_dst_password)
-      ? '<div class="tip">Thiếu mật khẩu trong users.csv</div>' : "";
+      ? ' <span class="badge b-err">thiếu mật khẩu</span>' : "";
     return '<tr><td><input type="checkbox" data-u="' + esc(m.src_user) + '"' +
       (selected.has(m.src_user) ? " checked" : "") + "></td>" +
       "<td>" + esc(m.src_user) + (m.done ? ' <span class="badge b-ok">đã xong</span>' : "") + "</td>" +
@@ -199,7 +221,7 @@ function renderRows() {
       '<td class="num">' + esc(m.mail) + "</td>" +
       '<td class="num">' + esc(m.dung_luong) + "</td>" +
       '<td class="num">' + esc(m.thoi_gian) + "</td>" +
-      "<td>" + esc(m.ghi_chu) + tips + warn + "</td>" +
+      "<td>" + esc(m.ghi_chu) + warn + more + "</td>" +
       '<td class="act"><button class="rm" data-rm="' + esc(m.src_user) +
       '" title="Xoá khỏi danh sách">✕</button></td></tr>';
   }).join("");
@@ -215,6 +237,21 @@ function renderRows() {
     btn.disabled = !!(state.job && state.job.running);
     btn.onclick = () => removeUser(btn.dataset.rm);
   });
+}
+
+// Mailbox nao co goi_y thi gom ca vao day, kem dong loi ngan de biet loi
+// nao ung voi loi khuyen nao. Khong co mailbox nao loi thi an luon card.
+function renderFix() {
+  const bad = state.mailboxes.filter((m) => (m.goi_y || []).length);
+  $("fix").hidden = !bad.length;
+  if (!bad.length) return;
+  $("fixcount").textContent = "(" + bad.length + " mailbox)";
+  $("fixlist").innerHTML = bad.map((m) =>
+    '<div class="fix"><div class="who"><b>' + esc(m.src_user) + "</b>" +
+    (m.ghi_chu ? '<span class="badge b-err">' + esc(m.ghi_chu) + "</span>" : "") +
+    "</div>" +
+    m.goi_y.map((t) => "<p>" + esc(t) + "</p>").join("") +
+    "</div>").join("");
 }
 
 function renderJob() {
@@ -280,7 +317,7 @@ async function refresh() {
     " · song song: " + state.workers + " mailbox";
   $("usersfile").textContent = state.users_file;
   renderLabels();
-  renderRows(); renderScope(); renderJob(); schedule();
+  renderRows(); renderFix(); renderScope(); renderJob(); schedule();
 }
 
 // Nhan trong giao dien lay tu config chu khong viet cung: mot ban cai chay
