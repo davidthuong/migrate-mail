@@ -1,0 +1,11 @@
+# Khong co cot src_password: nguon chay auth = master, va day chinh la
+# diem cua ca bai test.
+#
+# Buoc #9 doi dich sang master nua thi xoa luon cot dst_password -- file chi
+# con hai cot dia chi.
+#
+# ketoan@moi.vn CO Y khong ton tai ben dich: xem buoc #7 trong README.
+src_user,dst_user,dst_password
+an@cu.vn,an@moi.vn,MatKhauDichAn
+binh@cu.vn,binh@moi.vn,MatKhauDichBinh
+ketoan@cu.vn,ketoan@moi.vn,MatKhauKhongCoThat

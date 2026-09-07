@@ -1,0 +1,4 @@
+# Tai khoan quan tri cua dau NGUON. Ten tran, khong phai user@domain --
+# day la quy uoc cua Dovecot master user va cung la thu doctor se canh bao
+# neu dien nham thanh dia chi mail.
+migrate:{PLAIN}MatKhauMasterNguon
