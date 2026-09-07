@@ -21,10 +21,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import oauth
-from .config import Config
+from .config import MASTER_AUTHZID, Config, Login, ServerConf
 from .discover import Plan
 from .hints import diagnose
 from .oauth import OAuthError
@@ -150,31 +150,49 @@ def user_statedir(cfg: Config, user: User) -> Path:
     return Path(cfg.paths.statedir) / user.slug
 
 
+def logins_for(cfg: Config, user: User) -> Tuple[Login, Login]:
+    """Thong tin dang nhap cua hai dau cho mot mailbox.
+
+    Mot cho duy nhat dung ra chung, de passfile ghi ra va --user tren dong
+    lenh khong bao gio lech nhau.
+    """
+    return (cfg.source.login_for(user.src_user, user.src_password),
+            cfg.dest.login_for(user.dst_user, user.dst_password))
+
+
+def _auth_args(server: ServerConf, login: Login, n: str, passfile: Path,
+               tokenfile: Optional[Path]) -> List[str]:
+    """Tham so dinh danh + xac thuc cho mot dau. `n` la "1" hoac "2"."""
+    args = ["--user" + n, login.user]
+    # Dau chay OAuth2 (Microsoft 365) thi khong co mat khau nao ca: imapsync
+    # doc access token tu file va tu chuyen sang SASL XOAUTH2.
+    if server.uses_oauth:
+        return args + ["--oauthaccesstoken" + n, str(tokenfile)]
+    if login.via_authzid:
+        # --user van la hop thu can mo, --authuser moi la tai khoan dang nhap.
+        # Phai ep PLAIN: co che LOGIN khong mang duoc hai danh tinh, con
+        # imapsync thi mac dinh chon co che "manh nhat" ma server quang ba --
+        # gap server co CRAM-MD5 la no di duong do va bo roi authuser.
+        args += ["--authuser" + n, login.authuser, "--authmech" + n, "PLAIN"]
+    return args + ["--passfile" + n, str(passfile)]
+
+
 def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
                   passfile1: Path, passfile2: Path, statedir: Path,
                   since_days: int = 0,
                   tokenfile1: Optional[Path] = None,
                   tokenfile2: Optional[Path] = None) -> List[str]:
     sync = cfg.sync
+    login1, login2 = logins_for(cfg, user)
     cmd: List[str] = list(cfg.paths.imapsync_argv)
 
     cmd += ["--host1", cfg.source.host, "--port1", str(cfg.source.port)]
     cmd += ["--ssl1"] if cfg.source.ssl else ["--notls1"]
-    cmd += ["--user1", user.src_user]
-    # Nguon chay OAuth2 (Microsoft 365) thi khong co mat khau nao ca: imapsync
-    # doc access token tu file va tu chuyen sang SASL XOAUTH2.
-    if cfg.source.uses_oauth:
-        cmd += ["--oauthaccesstoken1", str(tokenfile1)]
-    else:
-        cmd += ["--passfile1", str(passfile1)]
+    cmd += _auth_args(cfg.source, login1, "1", passfile1, tokenfile1)
 
     cmd += ["--host2", cfg.dest.host, "--port2", str(cfg.dest.port)]
     cmd += ["--ssl2"] if cfg.dest.ssl else ["--notls2"]
-    cmd += ["--user2", user.dst_user]
-    if cfg.dest.uses_oauth:
-        cmd += ["--oauthaccesstoken2", str(tokenfile2)]
-    else:
-        cmd += ["--passfile2", str(passfile2)]
+    cmd += _auth_args(cfg.dest, login2, "2", passfile2, tokenfile2)
 
     if plan is not None:
         cmd += plan.imapsync_args()
@@ -279,16 +297,19 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
 
     try:
         refresh_jobs = []
-        for server, passfile, tokenfile, password in (
-                (cfg.source, pass1, token1, user.src_password),
-                (cfg.dest, pass2, token2, user.dst_password)):
+        login1, login2 = logins_for(cfg, user)
+        for server, passfile, tokenfile, login in (
+                (cfg.source, pass1, token1, login1),
+                (cfg.dest, pass2, token2, login2)):
             if server.uses_oauth:
                 # Token het han sau khoang mot gio; lay ngay truoc khi chay de
                 # mailbox nao cung khoi dong voi mot token con han.
                 _write_secret(tokenfile, oauth.source_for(server.oauth).token())
                 refresh_jobs.append((server, tokenfile))
             else:
-                _write_secret(passfile, password)
+                # Voi auth = master day la mat khau cua tai khoan quan tri,
+                # khong phai cua hop thu -- login_for da chon giup.
+                _write_secret(passfile, login.password)
 
         cmd = build_command(cfg, user, plan, mode, pass1, pass2, statedir,
                             since_days, token1, token2)
@@ -482,4 +503,9 @@ def flags_used(cfg: Config) -> List[str]:
         flags.append("--oauthaccesstoken1")
     if cfg.dest.uses_oauth:
         flags.append("--oauthaccesstoken2")
+    # Cung ly do voi OAuth2: kieu master separator ghep ten ngay trong --user1
+    # nen khong can flag nao them, chi kieu authzid moi dung toi --authuser.
+    for n, server in (("1", cfg.source), ("2", cfg.dest)):
+        if server.uses_master and server.master.style == MASTER_AUTHZID:
+            flags += ["--authuser" + n, "--authmech" + n]
     return flags

@@ -12,9 +12,23 @@ from pathlib import Path
 from typing import List
 
 COLUMNS = ["src_user", "src_password", "dst_user", "dst_password"]
-# Cot luon phai co. src_password chi bat buoc khi nguon dang nhap bang mat
-# khau; voi Microsoft 365 chay OAuth2 thi khong ai co mat khau cua user ca.
-REQUIRED = ["src_user", "dst_user", "dst_password"]
+
+
+def required_columns(need_src_password: bool = True,
+                     need_dst_password: bool = True) -> List[str]:
+    """Cac cot bat buoc, giu thu tu cua COLUMNS de thong bao loi de doc.
+
+    Hai cot dia chi thi lan nao cung phai co. Cot mat khau chi bat buoc khi
+    dau do dang nhap bang mat khau cua TUNG hop thu -- voi OAuth2 (Microsoft
+    365) hay auth = master (tai khoan quan tri) thi khong ai co mat khau cua
+    user ca.
+    """
+    optional = set()
+    if not need_src_password:
+        optional.add("src_password")
+    if not need_dst_password:
+        optional.add("dst_password")
+    return [c for c in COLUMNS if c not in optional]
 
 
 @dataclass
@@ -49,12 +63,14 @@ def check_permissions(path: Path) -> str:
     return ""
 
 
-def load_users(path: Path, need_src_password: bool = True) -> List[User]:
+def load_users(path: Path, need_src_password: bool = True,
+               need_dst_password: bool = True) -> List[User]:
     """Doc users.csv.
 
-    `need_src_password` = False khi nguon dang nhap khong bang mat khau
-    (Microsoft 365 chay OAuth2): khi do cot src_password co the de trong hoac
-    khong co trong file.
+    `need_src_password` / `need_dst_password` = False khi dau do dang nhap
+    khong bang mat khau cua tung hop thu (Microsoft 365 chay OAuth2, hoac
+    auth = master): khi do cot mat khau tuong ung co the de trong hoac khong
+    co trong file.
     """
     path = Path(path)
     if not path.exists():
@@ -65,9 +81,7 @@ def load_users(path: Path, need_src_password: bool = True) -> List[User]:
     if warn:
         print(warn, file=sys.stderr)
 
-    required = list(REQUIRED)
-    if need_src_password:
-        required.insert(1, "src_password")
+    required = required_columns(need_src_password, need_dst_password)
 
     users: List[User] = []
     seen_src, seen_dst = set(), set()

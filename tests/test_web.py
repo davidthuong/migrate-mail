@@ -166,6 +166,13 @@ class TestState(WebTestCase):
     def test_no_job_at_start(self):
         self.assertIsNone(self.state()["job"])
 
+    def test_says_which_password_fields_the_form_should_ask_for(self):
+        """Trang an o mat khau cua dau nao khong dung toi. Config cua bo test
+        nay chay password ca hai dau, nen ca hai deu duoc hoi."""
+        data = self.state()
+        self.assertTrue(data["needs_src_password"])
+        self.assertTrue(data["needs_dst_password"])
+
 
 class TestRunJob(WebTestCase):
     def run_action(self, action, only=None):
@@ -496,6 +503,17 @@ class TestPageScript(unittest.TestCase):
 
     def test_script_is_not_empty(self):
         self.assertGreater(len(self.script_source()), 1000)
+
+    def test_every_element_id_the_script_asks_for_exists_in_the_page(self):
+        """Cung noi lo voi test_every_button_on_the_page_is_a_known_action:
+        $("id") tra ve null cho id khong co, va JS chi hong luc chay -- moi
+        test Python van xanh. Bat luc doc file thay vi luc nguoi dung mo trang.
+        """
+        from migrate_mail.web_ui import PAGE
+        wanted = set(re.findall(r'\$\("([a-z0-9-]+)"\)', self.script_source()))
+        self.assertTrue(wanted, "khong doc duoc id nao tu script")
+        present = set(re.findall(r'id="([a-z0-9-]+)"', PAGE))
+        self.assertEqual(wanted - present, set())
 
 
 class TestActionTable(unittest.TestCase):

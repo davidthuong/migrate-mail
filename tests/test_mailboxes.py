@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
 from migrate_mail import cli, mailboxes
-from migrate_mail.users import load_users
+from migrate_mail.users import load_users, required_columns
 
 # Export-Csv cua PowerShell 5.1 khi quen -NoTypeInformation.
 EXPORT_CSV = (
@@ -266,6 +266,54 @@ host = mail.cu.com
 provider = icewarp
 host = mail.congty.vn
 """
+
+
+class TestRequiredColumns(unittest.TestCase):
+    """Cot mat khau nao bat buoc, tuy theo kieu xac thuc cua tung dau."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def write(self, text):
+        path = self.tmp / "users.csv"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_both_password_columns_required_by_default(self):
+        self.assertEqual(required_columns(),
+                         ["src_user", "src_password", "dst_user", "dst_password"])
+
+    def test_master_side_drops_only_its_own_password_column(self):
+        self.assertEqual(required_columns(need_dst_password=False),
+                         ["src_user", "src_password", "dst_user"])
+        self.assertEqual(required_columns(need_src_password=False),
+                         ["src_user", "dst_user", "dst_password"])
+
+    def test_destination_password_column_can_be_absent(self):
+        """Dich chay auth = master: khong ai co mat khau cua tung hop thu."""
+        path = self.write("src_user,src_password,dst_user\n"
+                          "an@cu.com,MatKhau,an@moi.vn\n")
+        users = load_users(path, need_dst_password=False)
+        self.assertEqual(users[0].dst_user, "an@moi.vn")
+        self.assertEqual(users[0].dst_password, "")
+
+    def test_destination_password_column_can_be_empty(self):
+        path = self.write("src_user,src_password,dst_user,dst_password\n"
+                          "an@cu.com,MatKhau,an@moi.vn,\n")
+        self.assertEqual(load_users(path, need_dst_password=False)[0].dst_password, "")
+
+    def test_missing_column_is_still_an_error_when_it_is_needed(self):
+        path = self.write("src_user,src_password,dst_user\n"
+                          "an@cu.com,MatKhau,an@moi.vn\n")
+        with self.assertRaises(ValueError) as ctx:
+            load_users(path)
+        self.assertIn("dst_password", str(ctx.exception))
+
+    def test_both_sides_can_skip_passwords_at_once(self):
+        path = self.write("src_user,dst_user\nan@cu.com,an@moi.vn\n")
+        users = load_users(path, need_src_password=False, need_dst_password=False)
+        self.assertEqual(len(users), 1)
 
 
 class TestMkusersCommand(unittest.TestCase):

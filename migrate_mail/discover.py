@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from . import oauth, providers
-from .config import Config, ServerConf, SyncConf
+from .config import Config, Login, ServerConf, SyncConf
 from .imaputf7 import decode as utf7_decode
 from .oauth import OAuthError
 from .providers import (SPECIAL_ALL, SPECIAL_ARCHIVE, SPECIAL_DRAFTS,
@@ -159,13 +159,39 @@ class _Xoauth2:
         return self.data
 
 
-def _login(conn, server: ServerConf, login: str, password: str) -> None:
+class _Plain:
+    """Callback cho imaplib.authenticate('PLAIN', ...) -- xem RFC 4616.
+
+    Ba truong ngan cach nhau bang byte 0: danh tinh muon MO (hop thu cua
+    khach), danh tinh dung de XAC THUC (tai khoan quan tri), roi mat khau cua
+    tai khoan quan tri. Nho truong dau ma mot lan dang nhap mo duoc hop thu
+    bat ky, khong can mat khau cua tung nguoi.
+    """
+
+    def __init__(self, login: Login):
+        self.data = b"\0".join(part.encode("utf-8") for part in
+                               (login.user, login.authuser, login.password))
+        self.sent = False
+
+    def __call__(self, _challenge) -> bytes:
+        # Giong XOAUTH2: challenge thu hai nghia la server da tu choi va dang
+        # doi mot dong rong, gui lai bi mat lan nua se treo phien.
+        if self.sent:
+            return b""
+        self.sent = True
+        return self.data
+
+
+def _login(conn, server: ServerConf, login: Login) -> None:
     """Dang nhap theo dung kieu xac thuc cua dau nay."""
     if server.uses_oauth:
         token = oauth.source_for(server.oauth).token()
-        conn.authenticate("XOAUTH2", _Xoauth2(login, token))
+        conn.authenticate("XOAUTH2", _Xoauth2(login.user, token))
         return
-    conn.login(login, password)
+    if login.via_authzid:
+        conn.authenticate("PLAIN", _Plain(login))
+        return
+    conn.login(login.user, login.password)
 
 
 @dataclass
@@ -210,7 +236,7 @@ def resolve_layout(server: ServerConf, detected: Layout) -> Layout:
 
 def server_layout(cfg: Config, user: User, side: str, timeout: int = 60) -> Layout:
     """Dang nhap mot dau chi de doc NAMESPACE. Nem DiscoveryError neu hong."""
-    server, login, password = _side(cfg, user, side)
+    server, login = _side(cfg, user, side)
     if not server.detect_prefix:
         return Layout(prefix=server.fixed_prefix)
     try:
@@ -219,7 +245,7 @@ def server_layout(cfg: Config, user: User, side: str, timeout: int = 60) -> Layo
         raise DiscoveryError("khong ket noi %s (%s:%s): %s"
                              % (server.label, server.host, server.port, exc))
     try:
-        _login(conn, server, login, password)
+        _login(conn, server, login)
         return _namespace(conn)
     except (imaplib.IMAP4.error, OAuthError) as exc:
         raise DiscoveryError("login %s that bai: %s"
@@ -263,17 +289,19 @@ class DestLayout:
         return self._value
 
 
-def _side(cfg: Config, user: User, side: str):
-    server = cfg.source if side == "source" else cfg.dest
-    login = user.src_user if side == "source" else user.dst_user
-    password = user.src_password if side == "source" else user.dst_password
-    return server, login, password
+def _side(cfg: Config, user: User, side: str) -> Tuple[ServerConf, Login]:
+    """Server va thong tin dang nhap cua mot dau. side = 'source' | 'dest'."""
+    if side == "source":
+        server, mailbox, password = cfg.source, user.src_user, user.src_password
+    else:
+        server, mailbox, password = cfg.dest, user.dst_user, user.dst_password
+    return server, server.login_for(mailbox, password)
 
 
 def list_folders(cfg: Config, user: User, side: str = "source",
                  timeout: int = 60) -> List[Folder]:
     """Dang nhap mot dau va liet ke toan bo folder. side = 'source' | 'dest'."""
-    server, login, password = _side(cfg, user, side)
+    server, login = _side(cfg, user, side)
     try:
         conn = _connect(server, timeout)
     except (socket.error, OSError) as exc:
@@ -282,7 +310,7 @@ def list_folders(cfg: Config, user: User, side: str = "source",
 
     try:
         try:
-            _login(conn, server, login, password)
+            _login(conn, server, login)
         except imaplib.IMAP4.error as exc:
             raise DiscoveryError("login that bai: %s" % clean_imap_error(exc))
         except OAuthError as exc:
@@ -314,7 +342,7 @@ def list_folders(cfg: Config, user: User, side: str = "source",
 
 def open_connection(cfg: Config, user: User, side: str, timeout: int = 120):
     """Mo va dang nhap mot dau. side = 'source' | 'dest'. Nem DiscoveryError neu hong."""
-    server, login, password = _side(cfg, user, side)
+    server, login = _side(cfg, user, side)
     label = server.label
     try:
         conn = _connect(server, timeout)
@@ -322,7 +350,7 @@ def open_connection(cfg: Config, user: User, side: str, timeout: int = 120):
         raise DiscoveryError("khong ket noi %s (%s:%s): %s"
                              % (label, server.host, server.port, exc))
     try:
-        _login(conn, server, login, password)
+        _login(conn, server, login)
     except (imaplib.IMAP4.error, OAuthError) as exc:
         try:
             conn.logout()
@@ -334,13 +362,13 @@ def open_connection(cfg: Config, user: User, side: str, timeout: int = 120):
 
 def check_login(cfg: Config, user: User, side: str, timeout: int = 60) -> Tuple[bool, str]:
     """Thu login mot dau. side = 'source' | 'dest'."""
-    server, login, password = _side(cfg, user, side)
+    server, login = _side(cfg, user, side)
     try:
         conn = _connect(server, timeout)
     except (socket.error, OSError) as exc:
         return False, "khong ket noi %s:%s (%s)" % (server.host, server.port, exc)
     try:
-        _login(conn, server, login, password)
+        _login(conn, server, login)
         return True, "OK"
     except (imaplib.IMAP4.error, OAuthError) as exc:
         return False, clean_imap_error(exc)

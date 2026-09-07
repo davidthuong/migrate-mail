@@ -15,9 +15,12 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail.config import SyncConf
-from migrate_mail.discover import _parse_list_line, build_plan
+from migrate_mail import providers
+from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, MasterConf,
+                                 ServerConf, SyncConf)
+from migrate_mail.discover import _login, _parse_list_line, _Plain, build_plan
 from migrate_mail.imaputf7 import decode
+from migrate_mail.providers import AUTH_MASTER
 
 BS = chr(92)
 Q = chr(34)
@@ -306,3 +309,79 @@ class TestF1f2Separator(unittest.TestCase):
     def test_normal_names_are_not_reported_as_unmappable(self):
         self.assertEqual(build_plan(parse(GMAIL_EN), SyncConf()).unmappable, [])
         self.assertEqual(build_plan(parse(GMAIL_VI), SyncConf()).unmappable, [])
+
+
+# Byte 0 dung ngan ba truong cua SASL PLAIN. Dat qua bytes([0]) chu khong viet
+# thang trong chuoi, theo dung ghi chu o dau file nay.
+NUL = bytes([0])
+
+
+class _FakeConn:
+    """Ghi lai lenh dang nhap thay vi noi chuyen voi server that."""
+
+    def __init__(self):
+        self.logins = []
+        self.auths = []
+
+    def login(self, user, password):
+        self.logins.append((user, password))
+
+    def authenticate(self, mech, authobject):
+        # imaplib goi callback moi lan server gui challenge.
+        self.auths.append((mech, authobject(b"")))
+        return "OK", [b"done"]
+
+
+def master_side(style=MASTER_AUTHZID, sep="*"):
+    return ServerConf("mail.cu.vn", 993, True, provider=providers.DOVECOT,
+                      auth=AUTH_MASTER,
+                      master=MasterConf(user="migrate", password="BiMat",
+                                        style=style, separator=sep))
+
+
+class TestMasterLogin(unittest.TestCase):
+    """Duong dang nhap cua auth = master khi tool tu mo IMAP (discover,
+    preflight, verify) -- khac duong cua imapsync nen phai kiem rieng."""
+
+    def test_authzid_sends_mailbox_then_admin_then_password(self):
+        server = master_side()
+        conn = _FakeConn()
+        _login(conn, server, server.login_for("an@cu.vn", ""))
+
+        mech, payload = conn.auths[0]
+        self.assertEqual(mech, "PLAIN")
+        # RFC 4616: authzid (hop thu can mo), authcid (tai khoan dang nhap),
+        # roi mat khau. Dao hai truong dau la dang nhap bang quyen cua khach
+        # thay vi cua quan tri -- va server van tra ve OK, nen khong ai thay.
+        self.assertEqual(payload,
+                         b"an@cu.vn" + NUL + b"migrate" + NUL + b"BiMat")
+        self.assertEqual(conn.logins, [])
+
+    def test_second_challenge_gets_an_empty_answer(self):
+        """Server tu choi thi no gui challenge lan hai va cho mot dong rong.
+        Gui lai bi mat o day se treo phien."""
+        server = master_side()
+        callback = _Plain(server.login_for("an@cu.vn", ""))
+        self.assertTrue(callback(b""))
+        self.assertEqual(callback(b"loi gi do"), b"")
+
+    def test_separator_style_uses_a_plain_login(self):
+        server = master_side(style=MASTER_SEPARATOR)
+        conn = _FakeConn()
+        _login(conn, server, server.login_for("an@cu.vn", ""))
+        self.assertEqual(conn.logins, [("an@cu.vn*migrate", "BiMat")])
+        self.assertEqual(conn.auths, [])
+
+    def test_password_auth_is_untouched(self):
+        server = ServerConf("mail.cu.vn", 993, True, provider=providers.DOVECOT)
+        conn = _FakeConn()
+        _login(conn, server, server.login_for("an@cu.vn", "MatKhauCuaAn"))
+        self.assertEqual(conn.logins, [("an@cu.vn", "MatKhauCuaAn")])
+        self.assertEqual(conn.auths, [])
+
+    def test_non_ascii_password_is_sent_as_utf8(self):
+        server = master_side()
+        server.master.password = "MatKhau"  # noqa: giu ascii o day
+        login = server.login_for("an@cu.vn", "")
+        login.password = "Biật"
+        self.assertIn("Biật".encode("utf-8"), _Plain(login).data)

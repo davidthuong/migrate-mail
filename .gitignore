@@ -2,6 +2,8 @@
 config.ini
 users.csv
 *.pass
+master-pass.txt
+oauth-secret.txt
 
 # Ket qua chay
 logs/
