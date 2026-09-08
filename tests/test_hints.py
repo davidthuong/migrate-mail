@@ -150,6 +150,43 @@ class TestDiagnose(unittest.TestCase):
         text = "bandwidth ... AUTHENTICATIONFAILED ... OVERQUOTA ... timeout ... TRYCREATE"
         self.assertLessEqual(len(diagnose(text, limit=2)), 2)
 
+    # --- imapsync da noi dau nao hong ---------------------------------------
+
+    def test_source_side_failure_says_source(self):
+        self.assertHint(
+            "Exiting with return value 162 "
+            "(EXIT_AUTHENTICATION_FAILURE_USER1) 1/50 nb_errors/max_errors PID 22160",
+            "phia NGUON")
+
+    def test_destination_side_failure_says_destination(self):
+        self.assertHint(
+            "Exiting with return value 162 "
+            "(EXIT_AUTHENTICATION_FAILURE_USER2) 1/50 nb_errors/max_errors PID 22160",
+            "phia DICH")
+
+    def test_destination_side_failure_names_the_usual_cause(self):
+        """Hop thu dich chua tao la ly do so mot, va no khong nam trong
+        users.csv nen loi khuyen chung khong dan toi dau."""
+        self.assertHint(
+            "EXIT_AUTHENTICATION_FAILURE_USER2", "CHUA DUOC TAO")
+
+    def test_side_specific_hint_replaces_the_generic_one(self):
+        """Goi y chung ket thuc bang 'chay preflight de biet dau nao hong' --
+        in cau do ra khi imapsync vua noi USER2 la bao nguoi truc di tim lai
+        cai da nam trong tay."""
+        log = ("Host2 failure: Error login on [mail.moi.vn] with user "
+               "[ketoan@moi.vn]: AUTHENTICATIONFAILED Authentication failed.\n"
+               "Exiting with return value 162 "
+               "(EXIT_AUTHENTICATION_FAILURE_USER2) 1/50 nb_errors/max_errors PID 22160\n")
+        tips = diagnose(log)
+        self.assertIn("phia DICH", tips[0])
+        self.assertFalse(any("preflight de biet dau nao hong" in t for t in tips),
+                         tips)
+
+    def test_a_plain_auth_failure_still_gets_the_generic_advice(self):
+        """Khong co ma USER1/USER2 thi van phai co loi khuyen, khong duoc im."""
+        self.assertHint("AUTHENTICATIONFAILED Invalid credentials", "users.csv")
+
     # --- auth = master -----------------------------------------------------
     # Ba mau nay hau nhu chi xuat hien khi tool da ep --authmech PLAIN, nen
     # khong gioi han theo provider ma van khong bao dong gia.
