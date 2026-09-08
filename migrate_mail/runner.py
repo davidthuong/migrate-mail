@@ -160,6 +160,18 @@ def logins_for(cfg: Config, user: User) -> Tuple[Login, Login]:
             cfg.dest.login_for(user.dst_user, user.dst_password))
 
 
+def _tls_args(server: ServerConf, n: str) -> List[str]:
+    """Bat/tat viec doi chieu chung chi cua imapsync. `n` la "1" hoac "2".
+
+    Viet ra ca hai gia tri chu khong dua vao mac dinh: mac dinh cua imapsync la
+    SSL_verify_mode=0 (khong kiem gi ca), va mot dong hien trong log noi ro lan
+    chay do CO hay KHONG doi chieu chung chi la thu can co khi doc lai sau.
+    """
+    if not server.ssl:
+        return []
+    return ["--sslargs" + n, "SSL_verify_mode=%d" % (1 if server.tls_verify else 0)]
+
+
 def _auth_args(server: ServerConf, login: Login, n: str, passfile: Path,
                tokenfile: Optional[Path]) -> List[str]:
     """Tham so dinh danh + xac thuc cho mot dau. `n` la "1" hoac "2"."""
@@ -188,10 +200,12 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
 
     cmd += ["--host1", cfg.source.host, "--port1", str(cfg.source.port)]
     cmd += ["--ssl1"] if cfg.source.ssl else ["--notls1"]
+    cmd += _tls_args(cfg.source, "1")
     cmd += _auth_args(cfg.source, login1, "1", passfile1, tokenfile1)
 
     cmd += ["--host2", cfg.dest.host, "--port2", str(cfg.dest.port)]
     cmd += ["--ssl2"] if cfg.dest.ssl else ["--notls2"]
+    cmd += _tls_args(cfg.dest, "2")
     cmd += _auth_args(cfg.dest, login2, "2", passfile2, tokenfile2)
 
     if plan is not None:
@@ -508,4 +522,6 @@ def flags_used(cfg: Config) -> List[str]:
     for n, server in (("1", cfg.source), ("2", cfg.dest)):
         if server.uses_master and server.master.style == MASTER_AUTHZID:
             flags += ["--authuser" + n, "--authmech" + n]
+        if server.ssl:
+            flags.append("--sslargs" + n)
     return flags

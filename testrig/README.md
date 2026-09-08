@@ -13,18 +13,28 @@ Rig vứt đi được: `docker compose down -v` là sạch.
 ## Dựng
 
 ```bash
-cd testrig && docker compose up -d --build
+cd testrig
+sudo ./make-certs.sh --trust      # PHẢI chạy trước, xem bên dưới
+docker compose up -d --build
 ```
 
-Hai container:
+Hai container, mỗi cái mở **hai** cổng:
 
-| | Cổng | Namespace | Giả làm |
-|---|---|---|---|
-| `mm-src` | 10143 | tiền tố `INBOX.`, dấu `.` (Maildir++) | hosting cũ của khách |
-| `mm-dst` | 20143 | không tiền tố, dấu `/` | server của mình |
+| | Không mã hoá | TLS | Namespace | Giả làm |
+|---|---|---|---|---|
+| `mm-src` | 10143 | 10993 | tiền tố `INBOX.`, dấu `.` (Maildir++) | hosting cũ của khách |
+| `mm-dst` | 20143 | 20993 | không tiền tố, dấu `/` | server của mình |
 
 Namespace hai bên khác nhau **có chủ ý**: nó bắt tool phải cắt tiền tố và đổi
 dấu phân cách trong lúc đang đăng nhập bằng master — đường code chưa ai chạy.
+
+**Vì sao phải có CA riêng.** Tool đối chiếu chứng chỉ ở cả hai đường — kết nối
+IMAP của chính nó và kết nối của imapsync — nên chứng chỉ tự ký sẽ bị từ chối,
+đúng như nó phải thế. `make-certs.sh` dựng một CA nhỏ, ký chứng chỉ cho hai
+container (SAN gồm cả `127.0.0.1`), và `--trust` cài CA đó vào trust store của
+máy này. Đúng cách một hệ thống nội bộ vẫn làm.
+
+`certs/` nằm trong `.gitignore` — khoá riêng không bao giờ được commit.
 
 ## Kiểm Dovecot trước, rồi mới đến tool
 
@@ -104,6 +114,27 @@ hỏng với gợi ý *"đổi master_style = separator"* ngược lại.
 khối `mailbox ... special_use` trong `src/dovecot.conf`, build lại, chạy `discover`:
 folder đặc biệt phải vẫn được nhận ra, lần này theo **tên**.
 
+**Chạy qua TLS.** Đổi hai đầu trong `config.testrig.ini` sang `port = 10993` /
+`20993` và `ssl = true`, rồi chạy lại từ bước #1. Mọi thứ phải y hệt — cùng số
+mail, cùng kết quả `verify`.
+
+**Chứng chỉ không tin được.** Đây là bài quan trọng nhất của phần TLS, vì nó
+kiểm thứ mà mã hoá *không* làm được:
+
+```bash
+sudo rm -f /usr/local/share/ca-certificates/migrate-mail-testrig.crt
+sudo update-ca-certificates --fresh
+```
+
+Giờ chứng chỉ của rig do một CA không ai tin ký. Chạy `preflight` và `sync`:
+**cả hai** phải chết với `certificate verify failed` — đường IMAP của tool lẫn
+đường imapsync. Rồi thêm `tls_verify = false` cho từng đầu: cả hai phải chạy
+lại được, và `doctor` phải kêu mỗi lần. Tin lại CA bằng
+`sudo ./make-certs.sh --trust`.
+
+Trước khi có `tls_verify`, bài này **im lặng đi qua** — cả hai nửa đều nhận bất
+kỳ chứng chỉ nào. Xem [mục dưới](#bốn-câu-hỏi-rig-này-sinh-ra-để-trả-lời).
+
 **Mật khẩu có `%`.** Đổi `master_password` trong `config.testrig.ini` thành
 `Mat%Khau%100` rồi chạy `$MM doctor`. Chỉ cần config **đọc được** là đạt —
 không cần đăng nhập thành công. `configparser` mặc định coi `%` là cú pháp thay
@@ -132,6 +163,22 @@ một tài khoản `migrate`: không hộp nào bị từ chối. Nghĩa là **k
 **4. Master có quyền ghi bên đích không?** — **Có**, kể cả tạo folder mới. Chạy
 master ở *cả hai* đầu với `users.csv` chỉ còn hai cột địa chỉ: 331 mail,
 16.6 MB, 2/2 mailbox OK, `verify` đối chiếu 331 mail lệch 0 ngày.
+
+## Thứ năm, tìm ra khi thêm TLS vào rig
+
+**Tool không đối chiếu chứng chỉ TLS.** Cả hai nửa. `ssl = true` cho mã hoá
+nhưng không cho biết đang nói chuyện với ai — ai chen được vào đường truyền đều
+đưa ra được chứng chỉ bất kỳ và nhận lấy mật khẩu. Với `auth = master`, mật
+khẩu đó mở được **mọi** hộp thư trên server.
+
+- `imaplib.IMAP4_SSL` khi không được truyền context dùng
+  `ssl._create_stdlib_context()` — `check_hostname = False`,
+  `verify_mode = CERT_NONE`. Tên hàm nghe như "context tiêu chuẩn".
+- imapsync mặc định `SSL_verify_mode=0`, và nó in hẳn dòng đó ra log.
+
+Chứng minh bằng cách gỡ CA khỏi trust store rồi chạy lại: **cả hai đường đều
+chấp nhận**. Đã sửa — `tls_verify` mặc định bật, và cùng phép thử đó giờ làm cả
+hai đường dừng lại với `certificate verify failed`.
 
 Hai lỗi tìm ra trong lúc dựng, đã sửa trong rig này:
 

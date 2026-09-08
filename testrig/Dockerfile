@@ -16,6 +16,12 @@ COPY ${SIDE}/dovecot.conf   /etc/dovecot/dovecot.conf
 COPY ${SIDE}/users          /etc/dovecot/users
 COPY ${SIDE}/master-users   /etc/dovecot/master-users
 
+# Chung chi cho cong 993. Chay ./make-certs.sh TRUOC khi build, neu khong buoc
+# COPY nay se hong ngay -- co y de hong o day chu khong de Dovecot chet luc
+# khoi dong voi mot dong loi kho doc hon.
+COPY certs/${SIDE}.crt      /etc/dovecot/tls/server.crt
+COPY certs/${SIDE}.key      /etc/dovecot/tls/server.key
+
 RUN chown root:dovecot /etc/dovecot/users /etc/dovecot/master-users \
  && chmod 640 /etc/dovecot/users /etc/dovecot/master-users
 

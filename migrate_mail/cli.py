@@ -92,6 +92,7 @@ def cmd_doctor(args, cfg: Config) -> int:
 
     problems += _check_oauth(cfg)
     problems += _check_master(cfg)
+    _check_tls(cfg)
 
     path = imapsync_available(cfg)
     if not path:
@@ -175,6 +176,28 @@ def _check_oauth(cfg: Config) -> int:
             say("[LOI ] OAuth2 %s: %s" % (side, exc))
             problems += 1
     return problems
+
+
+def _check_tls(cfg: Config) -> None:
+    """Noi ro tung dau co doi chieu chung chi hay khong.
+
+    Khong tinh la "van de" nen khong tra ve so: tat xac thuc la mot lua chon
+    hop le cho server noi bo. Nhung no phai HIEN RA moi lan chay doctor, chu
+    khong nam im trong config -- de khong ai vo tinh chay ca cuoc migrate ma
+    tuong minh dang duoc bao ve.
+    """
+    for label, server in (("nguon", cfg.source), ("dich", cfg.dest)):
+        if not server.ssl:
+            say("[CANH] %s dang chay khong ma hoa (ssl = false, cong %d). Chi "
+                "chap nhan duoc trong mang kin." % (label, server.port))
+        elif not server.tls_verify:
+            say("[CANH] %s: tls_verify = false -- ket noi duoc ma hoa nhung "
+                "KHONG doi chieu chung chi." % label)
+            say("       Ai chen duoc vao duong truyen deu dua ra duoc mot "
+                "chung chi bat ky va nhan lay mat khau.")
+            if server.uses_master:
+                say("       Dau nay dang chay auth = master, nen mat khau do "
+                    "mo duoc MOI hop thu tren server.")
 
 
 def _check_master(cfg: Config) -> int:

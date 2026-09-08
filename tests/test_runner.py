@@ -207,6 +207,45 @@ class TestMasterAuthCommand(unittest.TestCase):
         return cfg
 
 
+class TestTlsArgs(unittest.TestCase):
+    """imapsync cung khong kiem chung chi neu khong duoc bao.
+
+    Mac dinh cua no la SSL_verify_mode=0, va no in han ra dong do trong log.
+    Nen ca hai nua cua tool deu phai duoc noi ro, khong dua vao mac dinh nao.
+    """
+
+    def cfg(self, verify=True, ssl=True):
+        cfg = make_cfg()
+        cfg.source = ServerConf("imap.gmail.com", 993 if ssl else 143, ssl,
+                                tls_verify=verify)
+        return cfg
+
+    def test_verification_asked_for_by_default(self):
+        self.assertIn(("--sslargs1", "SSL_verify_mode=1"), pairs(build(self.cfg())))
+
+    def test_turned_off_is_written_out_not_left_to_the_default(self):
+        """Doc lai log mot lan chay cu phai biet duoc no CO kiem hay khong."""
+        self.assertIn(("--sslargs1", "SSL_verify_mode=0"),
+                      pairs(build(self.cfg(verify=False))))
+
+    def test_no_tls_args_on_a_plain_connection(self):
+        cmd = build(self.cfg(ssl=False))
+        self.assertNotIn("--sslargs1", cmd)
+        self.assertIn("--notls1", cmd)
+
+    def test_each_side_decides_for_itself(self):
+        cfg = make_cfg()
+        cfg.source = ServerConf("imap.gmail.com", 993, True, tls_verify=False)
+        cfg.dest = ServerConf("mail.moi.vn", 993, True, tls_verify=True)
+        p = pairs(build(cfg))
+        self.assertIn(("--sslargs1", "SSL_verify_mode=0"), p)
+        self.assertIn(("--sslargs2", "SSL_verify_mode=1"), p)
+
+    def test_doctor_checks_the_flag_only_when_ssl_is_used(self):
+        self.assertIn("--sslargs1", flags_used(self.cfg()))
+        self.assertNotIn("--sslargs1", flags_used(self.cfg(ssl=False)))
+
+
 class TestRedact(unittest.TestCase):
     def test_passfile_paths_hidden_in_log(self):
         cmd = ["imapsync", "--passfile1", "/s/src.pass", "--user1", "an@cu.com"]

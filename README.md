@@ -395,6 +395,39 @@ chọn đều có chú thích trong `config.example.ini`.
 
 > `config.ini` và `users.csv` đã nằm trong `.gitignore`. Đừng commit chúng.
 
+### TLS: mã hoá là một chuyện, xác thực là chuyện khác
+
+`ssl = true` mở kết nối mã hoá. Nhưng mã hoá **không** trả lời được câu "mình
+đang nói chuyện với đúng server đó chứ?" — trả lời câu đó là việc của chứng chỉ.
+
+Tool đối chiếu chứng chỉ ở **cả hai** đường: kết nối IMAP của chính nó
+(`preflight`, `discover`, `verify`) và kết nối của imapsync
+(`--sslargs1 SSL_verify_mode=1`). Không khớp thì dừng, không chạy tiếp.
+
+Đây không phải mặc định của thư viện. `imaplib.IMAP4_SSL` khi không được truyền
+context sẽ dùng `ssl._create_stdlib_context()` — `check_hostname = False`,
+`verify_mode = CERT_NONE`, tức là **nhận bất kỳ chứng chỉ nào**. imapsync cũng
+mặc định `SSL_verify_mode=0`. Cả hai đều phải được bảo mới kiểm.
+
+Server dùng chứng chỉ tự ký hoặc hết hạn thì `preflight` sẽ báo
+`certificate verify failed`. Ba cách xử lý, theo thứ tự nên ưu tiên:
+
+1. Sửa `host` cho khớp tên trong chứng chỉ — hay gặp nhất là điền IP trong khi
+   chứng chỉ cấp cho tên miền.
+2. Thay hoặc gia hạn chứng chỉ bên server đó.
+3. Nếu là hệ thống nội bộ và bạn chắc chắn đường truyền an toàn:
+
+   ```ini
+   tls_verify = false
+   ```
+
+   Đặt riêng cho từng đầu. Kết nối vẫn được mã hoá, chỉ thôi xác thực server.
+   `doctor` sẽ nhắc mỗi lần chạy, cố ý.
+
+> Cân nhắc kỹ trước khi tắt, nhất là khi đầu đó chạy `auth = master`: lúc ấy thứ
+> đi qua đường truyền không còn là mật khẩu một hộp thư, mà là mật khẩu mở được
+> **mọi** hộp thư trên server.
+
 ### Sinh `users.csv` từ danh sách mailbox của nguồn
 
 Với tenant vài chục mailbox, gõ tay `users.csv` là chỗ dễ sai nhất trong cả
@@ -950,7 +983,7 @@ Chung cho mọi nguồn:
 | `[OVERQUOTA]` lúc ghi sang đích | Hộp thư đích đầy |
 | `Message too big` | Vượt giới hạn kích thước của server đích; đặt `maxsize` |
 | `[TRYCREATE]` | Không tạo được folder bên đích — với IceWarp thường do trùng tên với folder PIM (Contacts, Calendar, Tasks, Notes) |
-| `certificate verify failed` | Chứng chỉ TLS sai tên miền hoặc hết hạn |
+| `certificate verify failed` | Chứng chỉ TLS hết hạn, tự ký, hoặc không khớp `host` trong `config.ini` — sửa cho khớp, hoặc `tls_verify = false` nếu chắc chắn đường truyền an toàn |
 | `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
 | `Unknown option` | imapsync quá cũ so với tuỳ chọn tool dùng; chạy `doctor` |
 

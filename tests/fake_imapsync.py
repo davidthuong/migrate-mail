@@ -41,6 +41,7 @@ FLAGS = [
     "--syncinternaldates", "--idatefromheader", "--version", "--help",
     "--oauthaccesstoken1", "--oauthaccesstoken2",
     "--authuser1", "--authuser2", "--authmech1", "--authmech2",
+    "--sslargs1", "--sslargs2",
 ]
 
 

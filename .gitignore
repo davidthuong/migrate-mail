@@ -5,6 +5,9 @@ users.csv
 master-pass.txt
 oauth-secret.txt
 
+# Khoa rieng cua CA testrig -- sinh boi testrig/make-certs.sh
+testrig/certs/
+
 # Ket qua chay
 logs/
 state/

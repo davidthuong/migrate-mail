@@ -13,6 +13,7 @@ services:
     # cua cho ca the gioi doc mail cua rig.
     ports:
       - "127.0.0.1:10143:143"
+      - "127.0.0.1:10993:993"
     volumes:
       - src-mail:/var/vmail
 
@@ -24,6 +25,7 @@ services:
     container_name: mm-dst
     ports:
       - "127.0.0.1:20143:143"
+      - "127.0.0.1:20993:993"
     volumes:
       - dst-mail:/var/vmail
 

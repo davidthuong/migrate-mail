@@ -84,6 +84,13 @@ class ServerConf:
     auth: str = AUTH_PASSWORD
     oauth: OAuthConf = field(default_factory=OAuthConf)
     master: MasterConf = field(default_factory=MasterConf)
+    # Co doi chieu chung chi TLS cua server khong. Chi co nghia khi ssl = true.
+    #
+    # Mac dinh BAT. Tat di thi ket noi van duoc ma hoa nhung khong con biet
+    # dang noi chuyen voi ai: ai chen duoc vao duong truyen deu dua ra duoc
+    # mot chung chi bat ky va nhan lay mat khau. Voi auth = master, mot lan
+    # nhu vay la mat mat khau mo duoc MOI hop thu tren server do.
+    tls_verify: bool = True
     # Tien to namespace cua server nay: "auto" (doc bang lenh NAMESPACE),
     # "none" (khong co), hoac mot chuoi co dinh nhu "INBOX.".
     # Ben nguon tien to nay bi CAT khoi ten folder, ben dich no duoc THEM vao.
@@ -311,6 +318,7 @@ def _server(cp: configparser.ConfigParser, section: str, base: Path,
         host=host, port=port, ssl=ssl, provider=provider, auth=auth,
         oauth=_oauth(cp, section, base),
         master=_master(cp, section, base),
+        tls_verify=cp.getboolean(section, "tls_verify", fallback=True),
         prefix=cp.get(section, "prefix", fallback=PREFIX_AUTO).strip(),
     )
     if conf.uses_oauth:

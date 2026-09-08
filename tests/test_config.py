@@ -192,6 +192,44 @@ class TestPrefix(ConfigCase):
         self.assertEqual(cfg.dest.fixed_prefix, "INBOX.")
 
 
+class TestTlsVerify(ConfigCase):
+    """Doi chieu chung chi TLS.
+
+    Mac dinh phai BAT. Truoc day tool khong kiem gi ca: imaplib.IMAP4_SSL khi
+    khong duoc truyen context se dung ssl._create_stdlib_context(), va cai do
+    co verify_mode = CERT_NONE. Ket noi van ma hoa nen nhin thi tuong on, con
+    thuc te ai chen vao giua duong truyen deu nhan duoc mat khau.
+    """
+
+    def test_verification_is_on_by_default(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST)
+        self.assertTrue(cfg.source.tls_verify)
+        self.assertTrue(cfg.dest.tls_verify)
+
+    def test_can_be_turned_off_per_side(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\ntls_verify = false\n"
+                        + MINIMAL_DEST)
+        self.assertFalse(cfg.source.tls_verify)
+        self.assertTrue(cfg.dest.tls_verify)
+
+    def test_context_verifies_when_on(self):
+        import ssl as ssl_mod
+        from migrate_mail.discover import ssl_context
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST)
+        ctx = ssl_context(cfg.source)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl_mod.CERT_REQUIRED)
+
+    def test_context_stops_verifying_when_off(self):
+        import ssl as ssl_mod
+        from migrate_mail.discover import ssl_context
+        cfg = self.load("[source]\nhost = imap.gmail.com\ntls_verify = false\n"
+                        + MINIMAL_DEST)
+        ctx = ssl_context(cfg.source)
+        self.assertFalse(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl_mod.CERT_NONE)
+
+
 MASTER_SOURCE = """
 [source]
 provider = dovecot

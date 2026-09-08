@@ -252,9 +252,12 @@ _COMMON_RULES = [
           "IMAP cua ca hai dau co mo cho IP nay khong."),
 
     _rule(30, r"certificate verify failed|ssl.*handshake|hostname.*doesn't match",
-          "Chung chi TLS khong hop le hoac khong khop ten mien. Sua cho dung "
-          "ten mien trong config.ini, gia han chung chi, hoac -- neu la server "
-          "noi bo -- dat ssl = false va port 143 trong mang kin."),
+          "Chung chi TLS cua server khong qua duoc kiem tra: het han, tu ky, "
+          "hoac khong khop ten mien trong config.ini. Cach dung: sua host cho "
+          "khop ten trong chung chi, hoac gia han/thay chung chi. Neu do la "
+          "server noi bo va ban chac chan duong truyen an toan thi dat "
+          "tls_verify = false cho dau do -- ket noi van ma hoa nhung thoi xac "
+          "thuc server, nen chi lam khi biet ro minh danh doi cai gi."),
 
     # Bo qua banner dau log ("imap connection timeout is 300 seconds") va dong
     # imapsync tu echo lai tham so --timeout.

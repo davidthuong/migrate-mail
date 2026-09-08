@@ -18,6 +18,7 @@ from __future__ import annotations
 import imaplib
 import re
 import socket
+import ssl
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -134,9 +135,27 @@ def _parse_list_line(line) -> Optional[Folder]:
     return Folder(raw=name, display=utf7_decode(name), flags=flags, delim=delim)
 
 
+def ssl_context(server: ServerConf) -> "ssl.SSLContext":
+    """Context TLS cho mot dau.
+
+    PHAI truyen context vao imaplib.IMAP4_SSL. Khong truyen thi imaplib dung
+    ssl._create_stdlib_context(), va cai do co check_hostname = False,
+    verify_mode = CERT_NONE -- tuc la chap nhan BAT KY chung chi nao. Ket noi
+    van duoc ma hoa nhung khong con xac thuc duoc server, va ai chen vao giua
+    duong truyen cung nhan duoc mat khau. Day khong phai mac dinh de nguoi ta
+    doan ra: ten ham nghe nhu "context tieu chuan".
+    """
+    ctx = ssl.create_default_context()
+    if not server.tls_verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
 def _connect(server: ServerConf, timeout: int):
     if server.ssl:
-        return imaplib.IMAP4_SSL(server.host, server.port, timeout=timeout)
+        return imaplib.IMAP4_SSL(server.host, server.port, timeout=timeout,
+                                 ssl_context=ssl_context(server))
     return imaplib.IMAP4(server.host, server.port, timeout=timeout)
 
 
