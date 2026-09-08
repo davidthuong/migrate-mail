@@ -110,6 +110,18 @@ class TestAuth(WebTestCase):
             urllib.request.urlopen(req, timeout=10)
         self.assertEqual(ctx.exception.code, 401)
 
+    def test_unauthorised_post_with_a_big_body_still_answers_401(self):
+        """Tu choi ma khong doc het body thi client nhan connection reset chu
+        khong nhan duoc cau tra loi 401 -- no khong bao gio biet vi sao bi
+        tu choi. Body cang lon cang de dinh, nen o day co y gui mot body to.
+        """
+        payload = {"src_user": "binh@cu.com", "rac": "x" * 200_000}
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users/remove", payload, token=False)
+        self.assertEqual(ctx.exception.code, 401)
+        # Doc duoc than cau tra loi moi tinh la da nhan tron ven.
+        self.assertIn("quyen", ctx.exception.read().decode("utf-8"))
+
     def test_page_refuses_without_token(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.get("/", token=False)

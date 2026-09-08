@@ -276,17 +276,40 @@ class Handler(BaseHTTPRequestHandler):
                 return True
         return False
 
-    def _body(self) -> Dict:
+    def _content_length(self) -> int:
+        """Do dai body, hoac 0 neu thieu, hong, hoac lon qua muc chap nhan."""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            return {}
-        if length <= 0 or length > 1_000_000:
+            return 0
+        return length if 0 < length <= 1_000_000 else 0
+
+    def _body(self) -> Dict:
+        length = self._content_length()
+        if not length:
             return {}
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return {}
+
+    def _drain(self) -> None:
+        """Doc het body roi vut di, khong dong den noi dung.
+
+        Phai goi truoc khi tu choi mot request co body. Neu server dap xong
+        roi dong socket trong luc client CON DANG GHI body, thu client nhan
+        duoc la connection reset chu khong phai cau tra loi 401 -- no khong
+        bao gio doc duoc ly do bi tu choi. Tren dashboard trieu chung la bam
+        nut khong thay gi xay ra, thay vi mot dong bao het phien dang nhap.
+
+        Doc chu khong parse: JSON o day chua qua cua xac thuc.
+        """
+        remaining = self._content_length()
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
 
     # -- routing ------------------------------------------------------------
     def do_GET(self):                                    # noqa: N802
@@ -344,6 +367,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):                                   # noqa: N802
         if not self._authorised():
+            # Doc het body truoc da -- xem _drain(). Chi POST moi can: GET cua
+            # dashboard khong mang body bao gio.
+            self._drain()
             self._json({"error": "khong co quyen"}, 401)
             return
         parsed = urllib.parse.urlparse(self.path)
