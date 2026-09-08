@@ -465,6 +465,76 @@ class TestVerifyCommand(CliTestCase):
         self.assertEqual(len(list((self.tmp / "logs").glob("verify-*.txt"))), 1)
 
 
+def _cfg_stub():
+    from migrate_mail.config import Config, Paths, ServerConf, SyncConf
+    return Config(
+        source=ServerConf("imap.gmail.com", 993, True),
+        dest=ServerConf("mail.moi.vn", 993, True),
+        sync=SyncConf(), paths=Paths(), path=Path("config.ini"),
+    )
+
+
+# Ten dich o dang IMAP tho, dung nhu build_plan sinh ra khi phai doi dau phan
+# cach: "Khach hang/Du an A" co dau.
+VI_RAW_DEST = "Kh&AOE-ch h&AOA-ng.D&HvE- &AOE-n A"
+
+
+def _vi_folder(raw="C&APQ-ng vi&Hsc-c/D&HvE- &AOE-n A"):
+    from migrate_mail.discover import _parse_list_line
+    from test_discover import imap_line
+    return _parse_list_line(imap_line("HasNoChildren", raw))
+
+
+class TestVietnameseNamesAreReadable(unittest.TestCase):
+    """Ten folder dich phai in ra doc duoc, khong phai UTF-7 tho.
+
+    `discover` ton tai de NGUOI nhin ke hoach truoc khi chay that. Ten dich
+    duoc giu o dang IMAP tho vi imapsync can dung dang do; in nguyen dang do
+    ra thi voi hop thu tieng Viet nua bang thanh "Kh&AOE-ch h&AOA-ng" -- hong
+    dung cho lenh nay co ich nhat.
+    """
+
+    def render(self, fn, *args):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fn(*args)
+        return buf.getvalue()
+
+    def plan(self):
+        from migrate_mail.discover import Plan
+        f = _vi_folder()
+        return Plan(folders=[f], mapped=[(f, VI_RAW_DEST)])
+
+    def test_destination_column_is_decoded(self):
+        from migrate_mail.users import User
+        user = User("an@cu.vn", "", "an@moi.vn", "x", row=2)
+        text = self.render(cli._print_plan, user, self.plan(), _cfg_stub())
+        self.assertIn(u"Dự án A", text)      # cot dich
+        self.assertIn(u"Công việc", text)    # cot nguon van nhu cu
+        self.assertNotIn("&AOE-", text)
+
+    def test_unmappable_warning_is_decoded(self):
+        from migrate_mail.discover import Plan
+        f = _vi_folder("C&APQ-ng vi&Hsc-c/a=b")
+        plan = Plan(folders=[f], kept=[f], unmappable=[(f, VI_RAW_DEST)])
+        text = self.render(cli._print_unmappable, plan)
+        self.assertIn(u"Khách hàng", text)
+        self.assertNotIn("&AOE-", text)
+
+    def test_collision_note_is_decoded_but_the_config_line_is_not(self):
+        """Dong extra_args duoc copy thang vao config.ini va imapsync doi ten
+        IMAP THO -- decode cho de mat se dan ra mot dong config khong chay."""
+        from migrate_mail.discover import Plan
+        a, b = _vi_folder(), _vi_folder("L&AbA-u tr&Hu8-")
+        plan = Plan(folders=[a, b], mapped=[(a, VI_RAW_DEST), (b, VI_RAW_DEST)])
+        text = self.render(cli._print_collisions, plan, _cfg_stub())
+
+        self.assertIn("TRUNG TEN FOLDER DICH", text)
+        # Dong mo ta cho nguoi doc: da decode.
+        self.assertIn(u"Khách hàng.Dự án A  <-", text)
+        # Dong lenh cho may: van nguyen ten tho.
+        self.assertIn("s,^%s$,%s-cu," % (VI_RAW_DEST, VI_RAW_DEST), text)
+
 class TestConfigErrors(CliTestCase):
     def test_missing_config_is_reported_clearly(self):
         buf = io.StringIO()

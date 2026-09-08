@@ -100,6 +100,24 @@ _LIMIT_RULES = [
 # Xac thuc
 # --------------------------------------------------------------------------- #
 _AUTH_RULES = [
+    # imapsync tu noi ro dang nhap hong o dau nao trong ma thoat cua no. Khi
+    # da co cau tra loi trong tay thi dung bao nguoi truc di tim lai: goi y
+    # chung ben duoi ket thuc bang "chay preflight de biet dau nao hong", va
+    # in cau do ra sau khi imapsync vua noi USER2 la lam mat thoi gian cua ho.
+    # Uu tien 12 de thay the goi y chung (15) trong cung ho "auth".
+    _rule(12, r"EXIT_AUTHENTICATION_FAILURE_USER1",
+          "Dang nhap that bai o phia NGUON (%(nguon)s) -- imapsync noi ro la "
+          "dau nay, dau dich khong sao. Kiem mat khau cua hop thu nguon; neu "
+          "nguon chay auth = master thi kiem master_user va master_password.",
+          family="auth"),
+
+    _rule(12, r"EXIT_AUTHENTICATION_FAILURE_USER2",
+          "Dang nhap that bai o phia DICH (%(dich)s) -- imapsync noi ro la "
+          "dau nay, dau nguon khong sao. Nguyen nhan hay gap nhat: HOP THU "
+          "DICH CHUA DUOC TAO. Neu da tao roi thi kiem mat khau ben dich, "
+          "hoac master_user / master_password neu dich chay auth = master.",
+          family="auth"),
+
     _rule(13, r"application-specific password required",
           "Account nay dang bat xac thuc 2 buoc nen phai dung App Password 16 "
           "ky tu, khong dung duoc mat khau dang nhap. Tao tai "

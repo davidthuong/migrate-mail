@@ -20,6 +20,7 @@ from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
                        DestLayout, build_plan, check_login, list_folders,
                        open_connection)
 from .hints import diagnose
+from .imaputf7 import decode as utf7_decode
 from .runner import (MODE_DRY, MODE_FOLDERS, MODE_SIZES, MODE_SYNC,
                      OAUTH_MIN_VERSION, Result, flags_used, imapsync_available,
                      imapsync_run, imapsync_version, run_user,
@@ -421,7 +422,7 @@ def _print_plan(user: User, plan: Plan, cfg: Config) -> None:
     if plan.mapped:
         say("  DOI TEN:")
         for f, dest in plan.mapped:
-            say("    - %-40s -> %s" % (f.display, dest))
+            say("    - %-40s -> %s" % (f.display, utf7_decode(dest)))
     if plan.kept:
         say("  GIU NGUYEN:")
         for f in plan.kept:
@@ -438,7 +439,7 @@ def _print_unmappable(plan: Plan) -> None:
     say("  Ten folder co chua dau '=' ma imapsync dung dau do lam dau phan cach")
     say("  cho --f1f2, nen khong dien ta duoc. Cac folder sau se GIU NGUYEN ten:")
     for folder, wanted in plan.unmappable:
-        say("    %s  (le ra -> %s)" % (folder.display, wanted))
+        say("    %s  (le ra -> %s)" % (folder.display, utf7_decode(wanted)))
     say("  Cach xu ly: doi ten folder do ben nguon cho het dau '=', roi chay lai.")
 
 
@@ -451,12 +452,16 @@ def _print_collisions(plan: Plan, cfg: Config) -> None:
     say("  Nhieu folder ben %s se do chung vao mot folder ben %s:"
         % (cfg.source.provider.name, cfg.dest.provider.name))
     for dest, sources in collisions:
-        say("    %s  <-  %s" % (dest, ", ".join(f.display for f in sources)))
+        say("    %s  <-  %s" % (utf7_decode(dest),
+                                ", ".join(f.display for f in sources)))
     say("")
     say("  Thuong gap khi hop thu nguon truoc day da tung import tu noi khac:")
     say("  ben canh folder chuan con sot lai mot folder cu cung cong dung.")
     say("  Neu muon giu rieng, doi ten label cu bang extra_args trong config.ini:")
     for dest, _sources in collisions:
+        # Dong nay nguoi dung copy thang vao config.ini, va imapsync doi ten
+        # IMAP THO. Day la cho duy nhat trong bao cao KHONG duoc decode: doc
+        # cho de mat thi dan ra mot dong config khong chay.
         say("    extra_args = --regextrans2 s,^%s$,%s-cu," % (dest, dest))
     say("  Neu tron chung la y muon thi cu chay tiep, khong mat mail.")
 
@@ -624,10 +629,12 @@ def cmd_sync(args, cfg: Config) -> int:
                     % (user.src_user, len(plan.mapped) + len(plan.kept), len(plan.excluded)))
                 for folder, wanted in plan.unmappable:
                     say("       CANH BAO: '%s' khong doi ten duoc thanh '%s' "
-                        "(ten chua dau '=')" % (folder.display, wanted))
+                        "(ten chua dau '=')"
+                        % (folder.display, utf7_decode(wanted)))
                 for dest, sources in plan.collisions():
                     say("       CANH BAO: %d folder do chung vao '%s': %s"
-                        % (len(sources), dest, ", ".join(f.display for f in sources)))
+                        % (len(sources), utf7_decode(dest),
+                           ", ".join(f.display for f in sources)))
                     say("       Xem './mm.py discover' de biet cach tach rieng.")
 
     _print_dest_layout(dest_layout)
