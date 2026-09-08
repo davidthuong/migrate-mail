@@ -267,6 +267,18 @@ provider = icewarp
 host = mail.congty.vn
 """
 
+CONFIG_DEST_MASTER = """[source]
+provider = dovecot
+host = mail.cu.com
+
+[dest]
+provider = dovecot
+host = mail.moi.vn
+auth = master
+master_user = migrate
+master_password = BiMat
+"""
+
 
 class TestRequiredColumns(unittest.TestCase):
     """Cot mat khau nao bat buoc, tuy theo kieu xac thuc cua tung dau."""
@@ -402,6 +414,53 @@ class TestMkusersCommand(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(self.out.exists())
         self.assertIn("khong ghi file", out)
+
+    # --- dich chay auth = master -------------------------------------------
+    # Mac dinh mkusers SINH mat khau ngau nhien cho tung hop thu dich roi bao
+    # "phai tao mailbox ben dich VOI DUNG nhung mat khau nay". Khi dich dang
+    # nhap bang tai khoan quan tri thi khong cho nao dung toi chung nua, va
+    # cau tren tro thanh mot viec thua ma nguoi doc se di lam that.
+
+    def master_dest(self, *args):
+        self.config.write_text(CONFIG_DEST_MASTER, encoding="utf-8")
+        return self.run_cli(*args)
+
+    def test_destination_password_column_is_left_empty(self):
+        code, out = self.master_dest()
+        self.assertEqual(code, 0, out)
+        rows = [l for l in self.out.read_text(encoding="utf-8").splitlines()
+                if l and not l.startswith("#") and not l.startswith("src_user")]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertTrue(row.endswith(","), "van sinh mat khau dich: %r" % row)
+
+    def test_says_why_the_column_is_empty(self):
+        _code, out = self.master_dest()
+        self.assertIn("cot dst_password de trong la dung", out)
+        # Va tuyet doi khong duoc khuyen tao mailbox theo mat khau sinh ra.
+        self.assertNotIn("DUNG nhung mat khau nay", out)
+
+    def test_dst_password_flag_is_ignored_and_said_so(self):
+        """Bo qua im lang thi nguoi chay van tuong mat khau ho dua da vao file,
+        roi di tao mailbox dich voi dung mat khau do."""
+        _code, out = self.master_dest("--dst-password", "MatKhauChung")
+        self.assertIn("BO QUA --dst-password", out)
+        self.assertNotIn("MatKhauChung", self.out.read_text(encoding="utf-8"))
+
+    def test_written_file_loads_with_both_password_columns_optional(self):
+        self.master_dest()
+        users = load_users(self.out, need_src_password=False,
+                           need_dst_password=False)
+        self.assertEqual(len(users), 3)
+        self.assertEqual(users[0].dst_password, "")
+
+    def test_normal_destination_still_generates_passwords(self):
+        """Doi chung: khong co master thi hanh vi cu phai giu nguyen."""
+        code, out = self.run_cli()
+        self.assertEqual(code, 0, out)
+        self.assertIn("DUNG nhung mat khau nay", out)
+        users = load_users(self.out, need_src_password=False)
+        self.assertTrue(users[0].dst_password)
 
 
 if __name__ == "__main__":

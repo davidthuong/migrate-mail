@@ -39,6 +39,10 @@ def fake_folders(cfg, user, side="source", timeout=60):
 
 
 class WebTestCase(unittest.TestCase):
+    # Lop con doi hai cai nay de chay tren mot cau hinh khac.
+    config_text = CONFIG
+    users_text = USERS
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="mmweb-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -48,9 +52,9 @@ class WebTestCase(unittest.TestCase):
         self.addCleanup(patcher.stop)
         imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
         (self.tmp / "config.ini").write_text(
-            CONFIG.format(imapsync=imapsync), encoding="utf-8")
+            self.config_text.format(imapsync=imapsync), encoding="utf-8")
         self.users_path = self.tmp / "users.csv"
-        self.users_path.write_text(USERS, encoding="utf-8")
+        self.users_path.write_text(self.users_text, encoding="utf-8")
 
         cfg = load_config(self.tmp / "config.ini")
         self.token = "test-token-abcdefghijklmnop"
@@ -306,6 +310,86 @@ class TestAddUser(WebTestCase):
         u = [x for x in load_users(self.users_path) if x.src_user == "moi@cu.com"][0]
         self.assertEqual(u.src_password, "aaaabbbbccccdddd")   # khoang trang da bo
         self.assertEqual(u.dst_user, "moi@moi.vn")
+
+
+CONFIG_DEST_MASTER = """[source]
+host = imap.gmail.com
+port = 993
+ssl = true
+
+[dest]
+provider = dovecot
+host = mail.moi.vn
+port = 993
+ssl = true
+auth = master
+master_user = migrate
+master_password = BiMat
+
+[paths]
+imapsync = {imapsync}
+logdir = logs
+statedir = state
+"""
+
+# Khong co cot dst_password -- dich dang nhap bang tai khoan quan tri.
+USERS_NO_DST_PASSWORD = """src_user,src_password,dst_user
+an@cu.com,aaaa bbbb cccc dddd,an@moi.vn
+binh@cu.com,eeeeffffgggghhhh,binh@moi.vn
+"""
+
+
+class TestAddUserWithMasterDest(WebTestCase):
+    """Them mailbox qua dashboard khi DICH chay auth = master.
+
+    Form tren trang an o mat khau dich di, nen no khong gui truong do len.
+    Neu server van doi truong do thi nut "Them vao danh sach" bao thieu mat
+    khau ma nguoi dung khong co cach nao dien -- o nhap da bien mat roi.
+    """
+
+    config_text = CONFIG_DEST_MASTER
+    users_text = USERS_NO_DST_PASSWORD
+
+    def test_state_tells_the_form_to_hide_the_field(self):
+        data = self.state()
+        self.assertTrue(data["needs_src_password"])
+        self.assertFalse(data["needs_dst_password"])
+        self.assertEqual(data["dest_auth"], "master")
+
+    def test_accepts_a_row_without_a_destination_password(self):
+        self.post("/api/users", {
+            "src_user": "moi@cu.com", "src_password": "aaaabbbbccccdddd",
+            "dst_user": "moi@moi.vn"})
+        self.assertEqual(len(self.state()["mailboxes"]), 3)
+
+    def test_written_row_is_usable(self):
+        self.post("/api/users", {
+            "src_user": "moi@cu.com", "src_password": "aaaabbbbccccdddd",
+            "dst_user": "moi@moi.vn"})
+        from migrate_mail.users import load_users
+        users = load_users(self.users_path, need_dst_password=False)
+        u = [x for x in users if x.src_user == "moi@cu.com"][0]
+        self.assertEqual(u.dst_user, "moi@moi.vn")
+        self.assertEqual(u.dst_password, "")
+
+    def test_address_fields_are_still_required(self):
+        """Bo bot mot cot khong duoc lam long het moi kiem tra con lai."""
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users", {"src_user": "moi@cu.com",
+                                     "src_password": "x" * 16})
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_duplicates_are_still_refused(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users", {
+                "src_user": "an@cu.com", "src_password": "x" * 16,
+                "dst_user": "khac@moi.vn"})
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_no_mailbox_is_flagged_as_missing_a_password(self):
+        flagged = [m["src_user"] for m in self.state()["mailboxes"]
+                   if not m["has_src_password"] or not m["has_dst_password"]]
+        self.assertEqual(flagged, [])
 
 
 class TestHeaders(WebTestCase):

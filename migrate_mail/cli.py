@@ -324,6 +324,10 @@ def cmd_mkusers(args, cfg: Config) -> int:
         say("Dich dang auth = %s nen cot dst_password de trong la dung: dang"
             % cfg.dest.auth)
         say("nhap di bang tai khoan chung, khong qua mat khau tung hop thu.")
+        if args.dst_password:
+            # Bo qua im lang thi nguoi chay van tuong mat khau ho dua da duoc
+            # ghi vao file, va se di tao mailbox dich voi dung mat khau do.
+            say("BO QUA --dst-password: dich khong dung mat khau tung hop thu.")
     elif args.blank_passwords:
         say("Cot dst_password dang de trong: users.csv chua doc duoc, phai dien")
         say("vao truoc khi chay preflight.")
