@@ -305,7 +305,12 @@ DOVECOT = Provider(
         "Muon dung auth = master (mot tai khoan mo duoc moi hop thu, khoi xin "
         "mat khau tung nguoi): them mot passdb co 'master = yes' vao "
         "/etc/dovecot/conf.d/10-auth.conf, tro vao mot file passwd-file chua "
-        "tai khoan quan tri, roi reload Dovecot.",
+        "tai khoan quan tri, roi reload Dovecot. Da chay thu that tren "
+        "Dovecot 2.3.19 -- xem thu muc testrig/ trong repo.",
+        "Kiem bang CA HAI lenh truoc khi chay tool: 'doveadm auth login "
+        "user@domain*quantri matkhau' va 'doveadm user user@domain'. Lenh dau "
+        "chi kiem passdb; userdb hong thi no van bao thanh cong trong khi moi "
+        "lan dang nhap IMAP that deu chet voi '[UNAVAILABLE] Internal error'.",
         "Mac dinh tool di duong SASL PLAIN (master_style = authzid). Neu "
         "Dovecot cua ban chi bat auth_master_user_separator thi dat "
         "master_style = separator va master_separator cho khop.",
@@ -348,9 +353,12 @@ ZIMBRA = Provider(
         "Bat IMAP trong COS: zimbraImapEnabled = TRUE.",
         "Zimbra bay ca Contacts/Calendar/Chats ra duong IMAP -- tool tu bo qua "
         "chung, kiem lai bang discover neu hop thu co folder ten la.",
-        "Muon dung auth = master: dat master_user la mot tai khoan admin "
-        "(dang day du admin@domain) va giu master_style = authzid. Zimbra "
-        "nhan tai khoan admin qua SASL PLAIN, khong can doi cau hinh gi them.",
+        "auth = master voi Zimbra CHUA duoc chay thu that lan nao -- phan sau "
+        "day suy tu tai lieu, khong phai tu quan sat. Theo do: dat master_user "
+        "la mot tai khoan admin (dang day du admin@domain), giu "
+        "master_style = authzid, khong phai doi cau hinh server. Chay "
+        "preflight tren MOT hop thu de biet chac; khong nhan thi thu "
+        "master_style = separator.",
     ),
 )
 

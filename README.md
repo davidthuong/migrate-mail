@@ -284,12 +284,24 @@ Cột mật khẩu tương ứng trong `users.csv` (`src_password` cho nguồn,
 Hỗ trợ với `provider` là `dovecot`, `zimbra`, hoặc `imap`. Đặt cho đầu nào cũng
 được, và đặt cho **cả hai** đầu cũng được.
 
+**Đã kiểm chứng tới đâu.** Nói thẳng để bạn biết chỗ nào đứng vững, chỗ nào nên
+thử trước:
+
+| | Trạng thái |
+|---|---|
+| **Dovecot** | Chạy thật đầu-cuối, cả hai `master_style`, cả hai đầu — Ubuntu 24.04 / Dovecot 2.3.19.1 / imapsync 2.314. Dựng lại bằng [`testrig/`](testrig/) |
+| **Zimbra** | **Chưa chạy thật lần nào.** Phần dưới là suy ra từ tài liệu Zimbra và imapsync, không phải từ quan sát |
+| **IMAP chung** | Để ngỏ, không phải lời hứa — tuỳ server |
+| Kết nối SSL | Rig chạy plaintext trong mạng kín, nên đường 993 chưa được thử với `auth = master` |
+
+Với Zimbra hoặc một server lạ, chạy `preflight` trên **một** hộp thư trước đã.
+
 **Hai kiểu gửi tài khoản quản trị lên server.** Khác nhau ở giao thức chứ không
 phải ở sở thích, nên chọn theo cái server chấp nhận:
 
 | `master_style` | Cách hoạt động | Dùng khi |
 |---|---|---|
-| `authzid` (mặc định) | SASL PLAIN mang ba trường: hộp thư cần mở, tài khoản quản trị, mật khẩu quản trị (RFC 4616) | Dovecot có passdb `master = yes`; Zimbra với tài khoản admin |
+| `authzid` (mặc định) | SASL PLAIN mang ba trường: hộp thư cần mở, tài khoản quản trị, mật khẩu quản trị (RFC 4616) | Dovecot có passdb `master = yes`; Zimbra với tài khoản admin (chưa kiểm chứng) |
 | `separator` | Ghép thành một tên đăng nhập `hopthu*quantri` rồi LOGIN như thường | Dovecot có bật `auth_master_user_separator`, hoặc server không cho SASL PLAIN |
 
 Đổi dấu phân cách bằng `master_separator` nếu server bạn không dùng `*`.
@@ -302,16 +314,33 @@ passdb {
   driver = passwd-file
   args = /etc/dovecot/master-users
   master = yes
-  result_success = continue
 }
 ```
+
+Đúng bốn dòng đó là đủ trên Dovecot 2.3.19 — đã chạy thật. Vài bản khác cần
+thêm `result_success = continue` trong khối này; nếu `doveadm auth login` không
+qua thì đó là dòng đầu tiên nên thử.
 
 File `/etc/dovecot/master-users` chứa dòng `migrate:{SHA512-CRYPT}$6$...` —
 sinh hash bằng `doveadm pw -s SHA512-CRYPT`. Tên tài khoản quản trị thường là
 tên trần (`migrate`), **không** phải `user@domain`.
 
-**Phía Zimbra** không phải đổi cấu hình gì: đặt `master_user` là một tài khoản
-admin đầy đủ (`admin@domain`) và giữ `master_style = authzid`.
+Kiểm bằng **hai** lệnh trước khi động tới tool, đừng bỏ lệnh thứ hai:
+
+```bash
+doveadm auth login 'an@congty-cu.vn*migrate' 'MatKhauMaster'   # passdb
+doveadm user an@congty-cu.vn                                    # userdb
+```
+
+`doveadm auth login` chỉ kiểm passdb. userdb hỏng thì nó vẫn báo
+`auth succeeded`, trong khi mọi lần đăng nhập IMAP thật đều chết với
+`[UNAVAILABLE] Internal error occurred` — một câu không hề nhắc tới userdb.
+
+**Phía Zimbra** — *chưa kiểm chứng, xem bảng ở trên.* Theo tài liệu thì không
+phải đổi cấu hình gì: đặt `master_user` là một tài khoản admin đầy đủ
+(`admin@domain`) và giữ `master_style = authzid`. Chạy `preflight` trên một hộp
+thư để biết chắc, và nếu nó không nhận thì `master_style = separator` là thứ
+đáng thử tiếp.
 
 > `master_password` là mật khẩu mở được **mọi** hộp thư trên server đó. Để nó ra
 > file riêng bằng `master_password_file` rồi `chmod 600`, đừng để thẳng trong
@@ -1033,6 +1062,7 @@ không cần mạng và không cần tài khoản thật.
   [phần này](#microsoft-365-cái-gì-không-đi-qua-imap).
 - Bộ lọc, chữ ký, chuyển tiếp bên nguồn cũng không được chuyển; phải tạo lại
   thủ công trên server đích.
-- `auth = master` chạy được với `dovecot`, `zimbra` và `imap` — xem
-  [phần này](#đăng-nhập-bằng-tài-khoản-quản-trị-auth--master). Provider khác đặt
+- `auth = master` nhận `dovecot`, `zimbra` và `imap` — xem
+  [phần này](#đăng-nhập-bằng-tài-khoản-quản-trị-auth--master). Mới chỉ **Dovecot**
+  là đã chạy thật; Zimbra suy từ tài liệu, chưa kiểm chứng. Provider khác đặt
   giá trị đó sẽ báo lỗi ngay lúc đọc config chứ không hỏng giữa chừng.
