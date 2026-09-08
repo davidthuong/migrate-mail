@@ -114,9 +114,10 @@ hỏng với gợi ý *"đổi master_style = separator"* ngược lại.
 khối `mailbox ... special_use` trong `src/dovecot.conf`, build lại, chạy `discover`:
 folder đặc biệt phải vẫn được nhận ra, lần này theo **tên**.
 
-**Chạy qua TLS.** Đổi hai đầu trong `config.testrig.ini` sang `port = 10993` /
-`20993` và `ssl = true`, rồi chạy lại từ bước #1. Mọi thứ phải y hệt — cùng số
-mail, cùng kết quả `verify`.
+**Chạy qua cổng không mã hoá.** Mặc định của rig là TLS 993, giống mọi ca
+migrate thật. Đổi hai đầu sang `port = 10143` / `20143` và `ssl = false` để thử
+đường không mã hoá — vẫn phải ra cùng số mail và cùng kết quả `verify`, và
+`doctor` phải kêu về việc không mã hoá.
 
 **Chứng chỉ không tin được.** Đây là bài quan trọng nhất của phần TLS, vì nó
 kiểm thứ mà mã hoá *không* làm được:

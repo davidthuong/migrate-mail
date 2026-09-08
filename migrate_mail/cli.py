@@ -190,6 +190,12 @@ def _check_tls(cfg: Config) -> None:
         if not server.ssl:
             say("[CANH] %s dang chay khong ma hoa (ssl = false, cong %d). Chi "
                 "chap nhan duoc trong mang kin." % (label, server.port))
+            # Nguoi ta hay ha xuong 143 de tranh mot chung chi xau. Ke tu khi
+            # co tls_verify thi do la nuoc di thua: bo luon ma hoa trong khi
+            # chi can bo phan doi chieu chung chi la du.
+            say("       Neu ha xuong 143 chi vi chung chi cua server co van "
+                "de, hay dat ssl = true + tls_verify = false thay vao do -- "
+                "van con ma hoa.")
         elif not server.tls_verify:
             say("[CANH] %s: tls_verify = false -- ket noi duoc ma hoa nhung "
                 "KHONG doi chieu chung chi." % label)
