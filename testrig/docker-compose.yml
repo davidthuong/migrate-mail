@@ -8,8 +8,11 @@ services:
       args:
         SIDE: src
     container_name: mm-src
+    # Chi mo tren loopback. Docker mac dinh publish ra 0.0.0.0, ma day la IMAP
+    # KHONG ma hoa voi mat khau nam san trong repo -- de lo ra internet la mo
+    # cua cho ca the gioi doc mail cua rig.
     ports:
-      - "10143:143"
+      - "127.0.0.1:10143:143"
     volumes:
       - src-mail:/var/vmail
 
@@ -20,7 +23,7 @@ services:
         SIDE: dst
     container_name: mm-dst
     ports:
-      - "20143:143"
+      - "127.0.0.1:20143:143"
     volumes:
       - dst-mail:/var/vmail
 
