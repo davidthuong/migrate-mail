@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Optional
 
 from . import __version__, cli, report
 from .config import Config, load_config
+from . import users as users_module
 from .users import User, load_users
 from .web_ui import PAGE
 
@@ -198,7 +199,8 @@ def _latest_rows(cfg: Config) -> Dict[str, Dict]:
 def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
     try:
         users = load_users(users_path,
-                           need_src_password=not cfg.source.uses_oauth)
+                           need_src_password=cfg.source.needs_mailbox_password,
+                           need_dst_password=cfg.dest.needs_mailbox_password)
     except Exception:
         return []
     latest = _latest_rows(cfg)
@@ -209,9 +211,12 @@ def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
         rows.append({
             "src_user": u.src_user,
             "dst_user": u.dst_user,
-            # Khong bao gio gui mat khau ve trinh duyet, chi bao la co hay khong
-            "has_src_password": bool(u.src_password),
-            "has_dst_password": bool(u.dst_password),
+            # Khong bao gio gui mat khau ve trinh duyet, chi bao la co hay khong.
+            # Dau nao khong dang nhap bang mat khau cua tung hop thu (OAuth2,
+            # master) thi coi nhu du: neu khong, ca danh sach se deo huy hieu
+            # "thieu mat khau" trong khi khong ai thieu gi.
+            "has_src_password": bool(u.src_password) or not cfg.source.needs_mailbox_password,
+            "has_dst_password": bool(u.dst_password) or not cfg.dest.needs_mailbox_password,
             "done": (done_dir / u.slug / "done.marker").exists(),
             "ket_qua": row.get("ket_qua", ""),
             "folder": row.get("folder", ""),
@@ -323,7 +328,9 @@ class Handler(BaseHTTPRequestHandler):
                 "source_provider": cfg.source.provider.name,
                 "dest_provider": cfg.dest.provider.name,
                 "source_auth": cfg.source.auth,
-                "needs_src_password": not cfg.source.uses_oauth,
+                "dest_auth": cfg.dest.auth,
+                "needs_src_password": cfg.source.needs_mailbox_password,
+                "needs_dst_password": cfg.dest.needs_mailbox_password,
                 "config": str(cfg.path),
                 "workers": cfg.sync.workers,
                 "users_file": str(self.users_path),
@@ -354,9 +361,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/users":
             try:
+                cfg = self.manager.cfg
                 added = _add_user(
                     self.users_path, body,
-                    need_src_password=not self.manager.cfg.source.uses_oauth)
+                    need_src_password=cfg.source.needs_mailbox_password,
+                    need_dst_password=cfg.dest.needs_mailbox_password)
             except ValueError as exc:
                 self._json({"error": str(exc)}, 400)
                 return
@@ -378,15 +387,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "khong tim thay"}, 404)
 
 
-def _add_user(users_path: Path, body: Dict, need_src_password: bool = True) -> str:
+def _add_user(users_path: Path, body: Dict, need_src_password: bool = True,
+              need_dst_password: bool = True) -> str:
     """Them mot dong vao users.csv. Tra ve dia chi nguon vua them."""
     import csv
 
-    fields = ["src_user", "src_password", "dst_user", "dst_password"]
+    fields = list(users_module.COLUMNS)
     values = {k: str(body.get(k) or "").strip() for k in fields}
-    # Nguon chay OAuth2 thi khong ai co mat khau cua user; cot van duoc ghi ra
-    # cho dung dinh dang file, chi de trong.
-    required = [f for f in fields if f != "src_password" or need_src_password]
+    # Dau chay OAuth2 hoac master thi khong ai co mat khau cua tung user; cot
+    # van duoc ghi ra cho dung dinh dang file, chi de trong.
+    required = users_module.required_columns(need_src_password, need_dst_password)
     missing = [k for k in required if not values[k]]
     if missing:
         raise ValueError("thieu: %s" % ", ".join(missing))
@@ -396,7 +406,8 @@ def _add_user(users_path: Path, body: Dict, need_src_password: bool = True) -> s
     existing = []
     try:
         existing = [u.src_user.lower()
-                    for u in load_users(users_path, need_src_password)]
+                    for u in load_users(users_path, need_src_password,
+                                        need_dst_password)]
     except Exception:
         pass
     if values["src_user"].lower() in existing:

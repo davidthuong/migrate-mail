@@ -1,0 +1,32 @@
+# Hai Dovecot tach biet, khong phai mot. Dau nguon va dau dich di qua hai
+# nhanh code khac nhau (--user1/--authuser1 vs --user2/--authuser2), va
+# namespace hai ben co y dat khac nhau de test luon phan cat/them tien to.
+services:
+  src:
+    build:
+      context: .
+      args:
+        SIDE: src
+    container_name: mm-src
+    # Chi mo tren loopback. Docker mac dinh publish ra 0.0.0.0, ma day la IMAP
+    # KHONG ma hoa voi mat khau nam san trong repo -- de lo ra internet la mo
+    # cua cho ca the gioi doc mail cua rig.
+    ports:
+      - "127.0.0.1:10143:143"
+    volumes:
+      - src-mail:/var/vmail
+
+  dst:
+    build:
+      context: .
+      args:
+        SIDE: dst
+    container_name: mm-dst
+    ports:
+      - "127.0.0.1:20143:143"
+    volumes:
+      - dst-mail:/var/vmail
+
+volumes:
+  src-mail:
+  dst-mail:

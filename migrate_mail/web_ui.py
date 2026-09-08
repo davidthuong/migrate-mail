@@ -160,7 +160,7 @@ PAGE = r"""<!doctype html>
            <input name="src_password" type="password"></div>
       <div><label id="lb-dst">Địa chỉ đích</label>
            <input name="dst_user" placeholder="an@congty.vn" required></div>
-      <div><label id="lb-dstpass">Mật khẩu đích</label>
+      <div id="wrap-dstpass"><label id="lb-dstpass">Mật khẩu đích</label>
            <input name="dst_password" type="password" required></div>
       <div><button type="submit" class="primary">Thêm vào danh sách</button></div>
     </form>
@@ -322,16 +322,23 @@ async function refresh() {
 
 // Nhan trong giao dien lay tu config chu khong viet cung: mot ban cai chay
 // Gmail -> IceWarp, ban khac chay Microsoft 365 -> Zimbra.
+function passField(id, needed) {
+  const wrap = $(id), input = wrap.querySelector("input");
+  wrap.style.display = needed ? "" : "none";
+  // Bỏ required cùng lúc với ẩn: một ô input required mà đang ẩn sẽ chặn
+  // submit vĩnh viễn, và trình duyệt không chỉ được ra chỗ nào sai.
+  input.required = !!needed;
+}
+
 function renderLabels() {
   const src = state.source_provider, dst = state.dest_provider;
   $("btn-dest").textContent = "Folder bên " + dst;
   $("lb-src").textContent = "Địa chỉ " + src;
   $("lb-dst").textContent = "Địa chỉ " + dst;
   $("lb-dstpass").textContent = "Mật khẩu " + dst;
-  const pass = $("wrap-srcpass"), input = pass.querySelector("input");
-  // OAuth2: không ai có mật khẩu của user, nên không hỏi.
-  pass.style.display = state.needs_src_password ? "" : "none";
-  input.required = !!state.needs_src_password;
+  // OAuth2 và master: không ai có mật khẩu của từng user, nên không hỏi.
+  passField("wrap-srcpass", state.needs_src_password);
+  passField("wrap-dstpass", state.needs_dst_password);
   $("lb-srcpass").textContent =
     state.source_provider.indexOf("Gmail") === 0 ? "App Password (16 ký tự)"
                                                  : "Mật khẩu " + src;

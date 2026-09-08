@@ -150,6 +150,29 @@ class TestDiagnose(unittest.TestCase):
         text = "bandwidth ... AUTHENTICATIONFAILED ... OVERQUOTA ... timeout ... TRYCREATE"
         self.assertLessEqual(len(diagnose(text, limit=2)), 2)
 
+    # --- auth = master -----------------------------------------------------
+    # Ba mau nay hau nhu chi xuat hien khi tool da ep --authmech PLAIN, nen
+    # khong gioi han theo provider ma van khong bao dong gia.
+
+    def test_server_refusing_sasl_plain_points_at_the_other_style(self):
+        self.assertHint("NO Unsupported authentication mechanism PLAIN",
+                        "master_style = separator")
+
+    def test_plaintext_over_clear_connection(self):
+        self.assertHint(
+            "NO [PRIVACYREQUIRED] Plaintext authentication disallowed on "
+            "non-secure (SSL/TLS) connections.", "ssl = true")
+
+    def test_admin_logged_in_but_cannot_open_that_mailbox(self):
+        self.assertHint("NO Authorization failed", "quan tri")
+
+    def test_master_hint_wins_over_the_generic_login_advice(self):
+        """Goi y chung bao 'kiem lai users.csv' -- voi auth = master thi cot
+        do dang de trong dung y do, nguoi truc se di sai huong."""
+        tips = diagnose("NO Unsupported authentication mechanism PLAIN")
+        self.assertIn("master_style", tips[0])
+        self.assertFalse(any("users.csv" in t for t in tips), tips)
+
 
 class TestProviderScope(unittest.TestCase):
     """Goi y phai theo dung nha cung cap dang chay.

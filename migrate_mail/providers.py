@@ -302,6 +302,13 @@ DOVECOT = Provider(
         "Neu hosting chan IP la, mo firewall cho IP cua VPS chay tool nay.",
         "Ten dang nhap thuong la dia chi day du user@domain, nhung mot so "
         "hosting dung dang user_domain -- thu bang preflight truoc.",
+        "Muon dung auth = master (mot tai khoan mo duoc moi hop thu, khoi xin "
+        "mat khau tung nguoi): them mot passdb co 'master = yes' vao "
+        "/etc/dovecot/conf.d/10-auth.conf, tro vao mot file passwd-file chua "
+        "tai khoan quan tri, roi reload Dovecot.",
+        "Mac dinh tool di duong SASL PLAIN (master_style = authzid). Neu "
+        "Dovecot cua ban chi bat auth_master_user_separator thi dat "
+        "master_style = separator va master_separator cho khop.",
     ),
 )
 
@@ -341,6 +348,9 @@ ZIMBRA = Provider(
         "Bat IMAP trong COS: zimbraImapEnabled = TRUE.",
         "Zimbra bay ca Contacts/Calendar/Chats ra duong IMAP -- tool tu bo qua "
         "chung, kiem lai bang discover neu hop thu co folder ten la.",
+        "Muon dung auth = master: dat master_user la mot tai khoan admin "
+        "(dang day du admin@domain) va giu master_style = authzid. Zimbra "
+        "nhan tai khoan admin qua SASL PLAIN, khong can doi cau hinh gi them.",
     ),
 )
 
@@ -406,10 +416,15 @@ IMAP = Provider(
     key="imap",
     name="IMAP chung",
     aliases=("generic", "other", "khac"),
+    # Mo ca master o day de lam duong thoat: server la nao ho tro tai khoan
+    # quan tri thi van dung duoc, khong phai cho them mot Provider moi.
+    auth_modes=(AUTH_PASSWORD, AUTH_MASTER),
     daily_limit_note="Khong biet han muc cua server nay; theo doi log khi chay.",
     prep=(
         "Chay preflight de chac chan dang nhap duoc, roi discover de nhin ke "
         "hoach folder truoc khi sync that.",
+        "auth = master o day la de ngo, khong phai loi hua: thu tren MOT hop "
+        "thu bang preflight truoc khi tin server nay nhan tai khoan quan tri.",
     ),
 )
 

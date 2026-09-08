@@ -375,5 +375,28 @@ class TestCustomProvider(unittest.TestCase):
         self.assertEqual(kept(plan), {"Du an"})
 
 
+class TestMasterSupport(unittest.TestCase):
+    """auth = master chi khai o nhung nguon that su co co che tai khoan quan
+    tri. Khai bua o cho khac se de nguoi dung dung ca buoi cau hinh mot thu
+    server ben kia khong bao gio nhan."""
+
+    def test_self_hosted_providers_allow_it(self):
+        for p in (providers.DOVECOT, providers.ZIMBRA):
+            self.assertTrue(p.supports(providers.AUTH_MASTER), p.key)
+
+    def test_generic_imap_leaves_the_door_open(self):
+        self.assertTrue(providers.IMAP.supports(providers.AUTH_MASTER))
+
+    def test_hosted_mail_providers_do_not(self):
+        for p in (providers.GMAIL, providers.M365, providers.YAHOO,
+                  providers.ZOHO, providers.ICLOUD):
+            self.assertFalse(p.supports(providers.AUTH_MASTER), p.key)
+
+    def test_password_stays_available_everywhere_master_is(self):
+        for p in providers.all_providers():
+            if p.supports(providers.AUTH_MASTER):
+                self.assertTrue(p.supports(providers.AUTH_PASSWORD), p.key)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

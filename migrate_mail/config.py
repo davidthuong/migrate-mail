@@ -18,11 +18,60 @@ from .providers import (AUTH_MASTER, AUTH_OAUTH2, AUTH_PASSWORD, ROLE_ARCHIVE,
 PREFIX_AUTO = "auto"
 PREFIX_NONE = "none"
 
+# Cach dua tai khoan quan tri len server khi auth = master. Hai kieu nay khac
+# nhau o giao thuc chu khong phai o so thich:
+#   authzid   : SASL PLAIN gui ba truong "hop_thu \0 quan_tri \0 mat_khau"
+#               (RFC 4616). Chuan chung, Dovecot va Zimbra deu hieu.
+#   separator : ghep thanh mot ten dang nhap "hop_thu*quan_tri" roi LOGIN nhu
+#               binh thuong. Cach rieng cua Dovecot, chi chay khi server co bat
+#               auth_master_user_separator -- nhung lai la cach DUY NHAT khi
+#               server khong cho SASL PLAIN mang authzid.
+MASTER_AUTHZID = "authzid"
+MASTER_SEPARATOR = "separator"
+MASTER_STYLES = (MASTER_AUTHZID, MASTER_SEPARATOR)
+DEFAULT_MASTER_SEPARATOR = "*"
+
 
 def _unquote(token: str) -> str:
     if len(token) > 1 and token[0] == token[-1] and token[0] in ('"', "'"):
         return token[1:-1]
     return token
+
+
+@dataclass
+class MasterConf:
+    """Tai khoan quan tri dung de mo hop thu cua nguoi khac.
+
+    Duoc cho auth = master. Thay vi xin mat khau cua tung mailbox, ta dang nhap
+    mot lan bang tai khoan nay va noi voi server "mo giup hop thu X".
+    """
+    user: str = ""
+    password: str = ""
+    style: str = MASTER_AUTHZID
+    separator: str = DEFAULT_MASTER_SEPARATOR
+
+    def missing(self) -> List[str]:
+        return [name for name in ("user", "password")
+                if not getattr(self, name).strip()]
+
+
+@dataclass
+class Login:
+    """Thong tin that su gui len server de mo MOT hop thu.
+
+    Phai tach khoi User vi voi auth = master khong con quan he mot-doi-mot
+    giua hop thu va cap ten/mat khau nua: ten dang nhap co the bi ghep them
+    tai khoan quan tri, mat khau la cua quan tri chu khong phai cua hop thu,
+    va o kieu authzid thi hai danh tinh di song song trong cung mot lenh.
+    """
+    user: str                  # ten dang nhap (--user1 cua imapsync)
+    password: str
+    # Tai khoan XAC THUC, khi khac voi hop thu duoc mo. Rong = dang nhap thang.
+    authuser: str = ""
+
+    @property
+    def via_authzid(self) -> bool:
+        return bool(self.authuser)
 
 
 @dataclass
@@ -34,6 +83,7 @@ class ServerConf:
     # password | oauth2 | master -- xem providers.AUTH_*
     auth: str = AUTH_PASSWORD
     oauth: OAuthConf = field(default_factory=OAuthConf)
+    master: MasterConf = field(default_factory=MasterConf)
     # Tien to namespace cua server nay: "auto" (doc bang lenh NAMESPACE),
     # "none" (khong co), hoac mot chuoi co dinh nhu "INBOX.".
     # Ben nguon tien to nay bi CAT khoi ten folder, ben dich no duoc THEM vao.
@@ -46,6 +96,29 @@ class ServerConf:
     @property
     def uses_oauth(self) -> bool:
         return self.auth == AUTH_OAUTH2
+
+    @property
+    def uses_master(self) -> bool:
+        return self.auth == AUTH_MASTER
+
+    @property
+    def needs_mailbox_password(self) -> bool:
+        """Co phai lay mat khau cua tung hop thu tu users.csv khong.
+
+        Chi auth = password moi can. OAuth2 di bang token cua ca tenant, master
+        di bang mat khau cua mot tai khoan quan tri -- ca hai deu khong ai co
+        mat khau cua tung user, va doi cho bang duoc la doi nham.
+        """
+        return self.auth == AUTH_PASSWORD
+
+    def login_for(self, mailbox: str, password: str) -> Login:
+        """Dung thong tin dang nhap de mo `mailbox` o dau nay."""
+        if not self.uses_master:
+            return Login(user=mailbox, password=password)
+        m = self.master
+        if m.style == MASTER_SEPARATOR:
+            return Login(user=mailbox + m.separator + m.user, password=m.password)
+        return Login(user=mailbox, password=m.password, authuser=m.user)
 
     @property
     def detect_prefix(self) -> bool:
@@ -150,15 +223,16 @@ def _date_source(value: str) -> str:
     return v
 
 
-def _read_secret_file(path: str, base: Path) -> str:
-    """Doc client secret tu file rieng, de khong phai de no trong config.ini."""
+def _read_secret_file(path: str, base: Path,
+                      key: str = "oauth_client_secret_file") -> str:
+    """Doc mot bi mat tu file rieng, de khong phai de no trong config.ini."""
     p = Path(path.strip())
     if not p.is_absolute():
         p = base / p
     try:
         return p.read_text(encoding="utf-8").strip()
     except OSError as exc:
-        raise ValueError("khong doc duoc oauth_client_secret_file (%s): %s" % (p, exc))
+        raise ValueError("khong doc duoc %s (%s): %s" % (key, p, exc))
 
 
 def _oauth(cp: configparser.ConfigParser, section: str, base: Path) -> OAuthConf:
@@ -175,19 +249,39 @@ def _oauth(cp: configparser.ConfigParser, section: str, base: Path) -> OAuthConf
     )
 
 
+def _master(cp: configparser.ConfigParser, section: str, base: Path) -> MasterConf:
+    password = cp.get(section, "master_password", fallback="").strip()
+    pass_file = cp.get(section, "master_password_file", fallback="").strip()
+    if pass_file:
+        password = _read_secret_file(pass_file, base, "master_password_file")
+
+    style = cp.get(section, "master_style", fallback=MASTER_AUTHZID).strip().lower()
+    if style not in MASTER_STYLES:
+        raise ValueError("[%s] master_style phai la mot trong: %s (dang co: %r)"
+                         % (section, ", ".join(MASTER_STYLES), style))
+
+    # Dau phan cach hay la mot ky tu configparser giu nguyen nhung mat nhin
+    # ("*"), nen cho phep boc trong dau nhay de nguoi dung nhin ro no o dau.
+    sep = _unquote(cp.get(section, "master_separator",
+                          fallback=DEFAULT_MASTER_SEPARATOR).strip())
+    if style == MASTER_SEPARATOR and not sep:
+        raise ValueError("[%s] master_separator khong duoc de rong khi "
+                         "master_style = separator" % section)
+
+    return MasterConf(
+        user=cp.get(section, "master_user", fallback="").strip(),
+        password=password,
+        style=style,
+        separator=sep,
+    )
+
+
 def _auth(cp: configparser.ConfigParser, section: str, provider: Provider) -> str:
     value = cp.get(section, "auth", fallback=AUTH_PASSWORD).strip().lower()
     known = (AUTH_PASSWORD, AUTH_OAUTH2, AUTH_MASTER)
     if value not in known:
         raise ValueError("[%s] auth phai la mot trong: %s (dang co: %r)"
                          % (section, ", ".join(known), value))
-    if value == AUTH_MASTER:
-        # Cho da chua san trong config va trong users.csv, nhung phan dang nhap
-        # bang tai khoan quan tri (Dovecot master user, Zimbra admin) chua lam.
-        # Bao ngay tu luc doc config chu khong de no hong giua chung sync.
-        raise ValueError(
-            "[%s] auth = master chua duoc hien thuc. Hien tai dung 'password' "
-            "(mat khau tung mailbox) hoac 'oauth2' (Microsoft 365)." % section)
     if not provider.supports(value):
         raise ValueError(
             "[%s] provider %s khong dung duoc auth = %s. Cach hop le: %s"
@@ -216,6 +310,7 @@ def _server(cp: configparser.ConfigParser, section: str, base: Path,
     conf = ServerConf(
         host=host, port=port, ssl=ssl, provider=provider, auth=auth,
         oauth=_oauth(cp, section, base),
+        master=_master(cp, section, base),
         prefix=cp.get(section, "prefix", fallback=PREFIX_AUTO).strip(),
     )
     if conf.uses_oauth:
@@ -224,6 +319,12 @@ def _server(cp: configparser.ConfigParser, section: str, base: Path,
             raise ValueError(
                 "[%s] auth = oauth2 nhung thieu: %s"
                 % (section, ", ".join("oauth_" + m for m in missing)))
+    if conf.uses_master:
+        missing = conf.master.missing()
+        if missing:
+            raise ValueError(
+                "[%s] auth = master nhung thieu: %s"
+                % (section, ", ".join("master_" + m for m in missing)))
     return conf
 
 
@@ -271,7 +372,12 @@ def load_config(path: Path) -> Config:
         raise FileNotFoundError(
             "khong thay %s -- copy config.example.ini thanh config.ini roi sua" % path
         )
-    cp = configparser.ConfigParser(inline_comment_prefixes=(";", "#"))
+    # interpolation=None: mac dinh configparser coi '%' la cu phap thay the va
+    # nem InterpolationSyntaxError khi gap mot dau '%' don doc. Mat khau thi
+    # rat hay co '%' -- va loi nem ra khong he nhac den mat khau, nen nguoi
+    # dung se di tim o cho khac. File nay khong dung thay the bao gio.
+    cp = configparser.ConfigParser(inline_comment_prefixes=(";", "#"),
+                                   interpolation=None)
     # utf-8-sig chu khong phai utf-8: Notepad va PowerShell tren Windows ghi
     # them BOM o dau file, va configparser doc BOM do thanh mot phan cua ten
     # section dau tien -> "File contains no section headers".

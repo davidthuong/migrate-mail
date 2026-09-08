@@ -244,6 +244,84 @@ class TestSync(CliTestCase):
         self.assertIn("1/2 mailbox OK", out)
 
 
+MASTER_CONFIG = """[source]
+provider = dovecot
+host = mail.cu.vn
+auth = master
+master_user = migrate
+master_password = BiMatCuaQuanTri
+
+[dest]
+host = mail.congty.vn
+
+[paths]
+imapsync = {imapsync}
+logdir = logs
+statedir = state
+"""
+
+# Khong co cot src_password: nguon chay master thi khong ai co mat khau cua
+# tung nguoi, va day chinh la ly do dung no.
+MASTER_USERS = """src_user,dst_user,dst_password
+an@cu.com,an@moi.vn,MatKhau1
+"""
+
+
+class TestMasterAuthEndToEnd(CliTestCase):
+    """Chay ca luong voi auth = master, tu users.csv den dong lenh imapsync."""
+
+    def setUp(self):
+        super(TestMasterAuthEndToEnd, self).setUp()
+        imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
+        (self.tmp / "config.ini").write_text(
+            MASTER_CONFIG.format(imapsync=imapsync), encoding="utf-8")
+        (self.tmp / "users.csv").write_text(MASTER_USERS, encoding="utf-8")
+
+    def sync(self, *args):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            return self.run_cli("sync", *args)
+
+    def test_users_csv_without_a_source_password_column_is_accepted(self):
+        code, out = self.run_cli("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 mailbox", out)
+
+    def test_doctor_names_the_admin_account(self):
+        _code, out = self.run_cli("doctor")
+        self.assertIn("migrate", out)
+        self.assertIn("authzid", out)
+
+    def test_imapsync_is_told_the_mailbox_and_the_admin_separately(self):
+        code, out = self.sync()
+        self.assertEqual(code, 0, out)
+        argv = self.recorded_argv()[0]
+        p = list(zip(argv, argv[1:]))
+        self.assertIn(("--user1", "an@cu.com"), p)
+        self.assertIn(("--authuser1", "migrate"), p)
+        self.assertIn(("--authmech1", "PLAIN"), p)
+
+    def test_admin_password_stays_out_of_argv_and_out_of_the_log(self):
+        self.sync()
+        self.assertNotIn("BiMatCuaQuanTri", self.recorded_argv()[0])
+        log = next((self.tmp / "logs").glob("an@cu.com.sync.*.log"))
+        text = log.read_text(encoding="utf-8")
+        self.assertNotIn("BiMatCuaQuanTri", text)
+        self.assertIn("<passfile>", text)
+
+    def test_separator_style_glues_the_names_instead(self):
+        path = self.tmp / "config.ini"
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "master_user = migrate",
+                "master_user = migrate\nmaster_style = separator"),
+            encoding="utf-8")
+        code, out = self.sync()
+        self.assertEqual(code, 0, out)
+        argv = self.recorded_argv()[0]
+        self.assertIn(("--user1", "an@cu.com*migrate"), list(zip(argv, argv[1:])))
+        self.assertNotIn("--authuser1", argv)
+
+
 class TestReport(CliTestCase):
     def test_report_replays_last_run(self):
         with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):

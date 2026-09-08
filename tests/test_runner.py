@@ -10,10 +10,12 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from migrate_mail import providers
-from migrate_mail.config import Config, Paths, ServerConf, SyncConf
+from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config,
+                                 MasterConf, Paths, ServerConf, SyncConf)
 from migrate_mail.discover import _parse_list_line, build_plan
-from migrate_mail.runner import (MODE_DRY, MODE_SYNC, build_command, parse_output,
-                                 _redact, _write_secret)
+from migrate_mail.providers import AUTH_MASTER
+from migrate_mail.runner import (MODE_DRY, MODE_SYNC, build_command, flags_used,
+                                 logins_for, parse_output, _redact, _write_secret)
 from migrate_mail.users import User
 
 from test_discover import GMAIL_EN, parse
@@ -132,6 +134,77 @@ class TestBuildCommand(unittest.TestCase):
         # subprocess se nem TypeError neu lot mot phan tu khong phai chuoi
         for token in build():
             self.assertIsInstance(token, str)
+
+
+def master_server(host="mail.cu.vn", style=MASTER_AUTHZID, sep="*") -> ServerConf:
+    return ServerConf(
+        host, 993, True, provider=providers.DOVECOT, auth=AUTH_MASTER,
+        master=MasterConf(user="migrate", password="BiMat", style=style,
+                          separator=sep),
+    )
+
+
+class TestMasterAuthCommand(unittest.TestCase):
+    """auth = master: mot tai khoan quan tri mo hop thu cua tung nguoi."""
+
+    def test_authzid_keeps_user1_as_the_mailbox(self):
+        cfg = make_cfg()
+        cfg.source = master_server()
+        p = pairs(build(cfg))
+        # --user1 van la hop thu can mo; tai khoan dang nhap di rieng.
+        self.assertIn(("--user1", "an@cu.com"), p)
+        self.assertIn(("--authuser1", "migrate"), p)
+
+    def test_authzid_forces_plain(self):
+        """Co che LOGIN khong mang duoc hai danh tinh, va imapsync mac dinh
+        chon co che 'manh nhat' server quang ba -- gap CRAM-MD5 la no bo roi
+        authuser ma khong bao gi."""
+        self.assertIn(("--authmech1", "PLAIN"), pairs(build(self._cfg())))
+
+    def test_separator_style_sends_one_glued_name_and_no_authuser(self):
+        cfg = make_cfg()
+        cfg.source = master_server(style=MASTER_SEPARATOR)
+        cmd = build(cfg)
+        self.assertIn(("--user1", "an@cu.com*migrate"), pairs(cmd))
+        self.assertNotIn("--authuser1", cmd)
+        self.assertNotIn("--authmech1", cmd)
+
+    def test_master_password_never_reaches_the_command_line(self):
+        cmd = build(self._cfg())
+        self.assertNotIn("BiMat", cmd)
+        self.assertIn("--passfile1", cmd)
+
+    def test_passfile_gets_the_admin_password_not_the_mailbox_one(self):
+        """Cho de sai nhat cua tinh nang nay: ghi mat khau cua hop thu vao
+        passfile trong khi dong lenh lai dang nhap bang tai khoan quan tri."""
+        cfg = self._cfg()
+        login1, _login2 = logins_for(cfg, USER)
+        self.assertEqual(login1.password, "BiMat")
+        self.assertNotEqual(login1.password, USER.src_password)
+
+    def test_destination_side_works_the_same_way(self):
+        cfg = make_cfg()
+        cfg.dest = master_server(host="moi.vn")
+        p = pairs(build(cfg))
+        self.assertIn(("--user2", "an@moi.vn"), p)
+        self.assertIn(("--authuser2", "migrate"), p)
+        self.assertIn(("--authmech2", "PLAIN"), p)
+        # Dau nguon khong dung master thi khong duoc dinh flag nao.
+        self.assertNotIn("--authuser1", build(cfg))
+
+    def test_doctor_checks_the_flags_only_when_they_are_used(self):
+        plain = make_cfg()
+        self.assertNotIn("--authuser1", flags_used(plain))
+        self.assertIn("--authuser1", flags_used(self._cfg()))
+        # Kieu separator ghep ten ngay trong --user1, khong can flag nao them.
+        sep = make_cfg()
+        sep.source = master_server(style=MASTER_SEPARATOR)
+        self.assertNotIn("--authuser1", flags_used(sep))
+
+    def _cfg(self) -> Config:
+        cfg = make_cfg()
+        cfg.source = master_server()
+        return cfg
 
 
 class TestRedact(unittest.TestCase):

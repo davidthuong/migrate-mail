@@ -261,6 +261,65 @@ host = mail.khachhang.vn
 Tool vẫn đọc cờ SPECIAL-USE và đối chiếu bảng tên tiếng Anh + tiếng Việt. Chạy
 `discover` để xem nó phân loại đúng chưa trước khi chạy thật.
 
+### Đăng nhập bằng tài khoản quản trị (`auth = master`)
+
+Cách mặc định là xin mật khẩu của **từng hộp thư** rồi điền vào `users.csv`. Với
+một cuộc migrate 200 mailbox thì đó là 200 lần đi hỏi, và mỗi mật khẩu thu về
+đều là một thứ phải giữ rồi phải xoá. Nếu bạn làm chủ server — đầu nguồn tự
+dựng, hoặc đầu đích là hệ thống của chính bạn — thì đi đường này thay thế:
+
+```ini
+[source]
+provider = dovecot
+host     = mail.congty-cu.vn
+auth     = master
+
+master_user          = migrate
+master_password_file = master-pass.txt
+```
+
+Cột mật khẩu tương ứng trong `users.csv` (`src_password` cho nguồn,
+`dst_password` cho đích) khi đó **để trống** — tool không đọc tới nữa.
+
+Hỗ trợ với `provider` là `dovecot`, `zimbra`, hoặc `imap`. Đặt cho đầu nào cũng
+được, và đặt cho **cả hai** đầu cũng được.
+
+**Hai kiểu gửi tài khoản quản trị lên server.** Khác nhau ở giao thức chứ không
+phải ở sở thích, nên chọn theo cái server chấp nhận:
+
+| `master_style` | Cách hoạt động | Dùng khi |
+|---|---|---|
+| `authzid` (mặc định) | SASL PLAIN mang ba trường: hộp thư cần mở, tài khoản quản trị, mật khẩu quản trị (RFC 4616) | Dovecot có passdb `master = yes`; Zimbra với tài khoản admin |
+| `separator` | Ghép thành một tên đăng nhập `hopthu*quantri` rồi LOGIN như thường | Dovecot có bật `auth_master_user_separator`, hoặc server không cho SASL PLAIN |
+
+Đổi dấu phân cách bằng `master_separator` nếu server bạn không dùng `*`.
+
+**Phía Dovecot** cần thêm một passdb quản trị vào
+`/etc/dovecot/conf.d/10-auth.conf` rồi reload:
+
+```
+passdb {
+  driver = passwd-file
+  args = /etc/dovecot/master-users
+  master = yes
+  result_success = continue
+}
+```
+
+File `/etc/dovecot/master-users` chứa dòng `migrate:{SHA512-CRYPT}$6$...` —
+sinh hash bằng `doveadm pw -s SHA512-CRYPT`. Tên tài khoản quản trị thường là
+tên trần (`migrate`), **không** phải `user@domain`.
+
+**Phía Zimbra** không phải đổi cấu hình gì: đặt `master_user` là một tài khoản
+admin đầy đủ (`admin@domain`) và giữ `master_style = authzid`.
+
+> `master_password` là mật khẩu mở được **mọi** hộp thư trên server đó. Để nó ra
+> file riêng bằng `master_password_file` rồi `chmod 600`, đừng để thẳng trong
+> `config.ini` — file này hay bị copy đi copy lại giữa các cuộc migrate.
+
+Chạy `preflight` trên **một** hộp thư trước khi tin cả danh sách: đây là chỗ
+duy nhất biết chắc server có chấp nhận hay không.
+
 ## Chuẩn bị phía đích
 
 ```ini
@@ -299,8 +358,8 @@ src_user,src_password,dst_user,dst_password
 an.nguyen@congty-cu.com,abcd efgh ijkl mnop,an.nguyen@congty.vn,MatKhauDich1
 ```
 
-Nguồn chạy `auth = oauth2` thì cột `src_password` để trống — không ai có mật
-khẩu của user, và tool cũng không cần.
+Đầu nào chạy `auth = oauth2` hay `auth = master` thì cột mật khẩu tương ứng để
+trống — không ai có mật khẩu của từng user, và tool cũng không cần.
 
 `config.ini` — ít nhất phải sửa `[source] provider` và `[dest] host`. Mọi tuỳ
 chọn đều có chú thích trong `config.example.ini`.
@@ -381,8 +440,12 @@ những mật khẩu đó, hoặc đổi lại cột `dst_password` cho khớp.
 đang chứa mật khẩu thật. Muốn thay thế thì thêm `--force`.
 
 Cột `src_password` luôn để trống: `Get-Mailbox` không cho ra mật khẩu của user.
-Với nguồn chạy `auth = oauth2` thì như vậy là đủ; với nguồn chạy
-`auth = password` thì phải điền cột đó tay trước khi `preflight`.
+Với nguồn chạy `auth = oauth2` hay `auth = master` thì như vậy là đủ; với nguồn
+chạy `auth = password` thì phải điền cột đó tay trước khi `preflight`.
+
+Đích chạy `auth = master` thì `mkusers` để trống luôn cột `dst_password` và bỏ
+qua `--dst-password`: sinh mật khẩu ngẫu nhiên cho những hộp thư mà không chỗ
+nào dùng tới chỉ tạo ra việc phải dọn.
 
 ---
 
@@ -885,6 +948,15 @@ Microsoft 365:
 | `IMAP4 protocol is disabled` | Chưa `Set-CASMailbox -ImapEnabled $true` cho mailbox đó |
 | `Server Unavailable` | Throttling — giảm `workers`, **không phải** hạn mức ngày, không cần chờ |
 
+`auth = master`:
+
+| Triệu chứng | Nguyên nhân |
+|---|---|
+| `Unsupported authentication mechanism` | Server không nhận SASL PLAIN; đổi `master_style = separator` |
+| `Plaintext authentication disallowed` | Kết nối chưa mã hoá; đặt `ssl = true` và `port = 993` |
+| `Authorization failed` / `not authorized to login as` | Đăng nhập được nhưng không được mở hộp thư đó: sai quyền, hộp thư đích chưa tạo, hoặc passdb Dovecot thiếu `master = yes` |
+| `Authentication failed` ngay từ hộp thư đầu tiên | Sai `master_user` / `master_password`, hoặc Dovecot chưa reload sau khi thêm passdb |
+
 Dovecot / cPanel / Courier / Zimbra:
 
 | Triệu chứng | Nguyên nhân |
@@ -930,7 +1002,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     403 test, không chạm mạng
+tests/                     450 test, không chạm mạng
 install.sh                 cài imapsync + module Perl
 ```
 
@@ -961,6 +1033,6 @@ không cần mạng và không cần tài khoản thật.
   [phần này](#microsoft-365-cái-gì-không-đi-qua-imap).
 - Bộ lọc, chữ ký, chuyển tiếp bên nguồn cũng không được chuyển; phải tạo lại
   thủ công trên server đích.
-- `auth = master` (đăng nhập bằng tài khoản quản trị: Dovecot master user,
-  Zimbra admin) đã có chỗ trong `config.ini` nhưng **chưa được hiện thực** —
-  đặt giá trị đó sẽ báo lỗi ngay lúc đọc config chứ không hỏng giữa chừng.
+- `auth = master` chạy được với `dovecot`, `zimbra` và `imap` — xem
+  [phần này](#đăng-nhập-bằng-tài-khoản-quản-trị-auth--master). Provider khác đặt
+  giá trị đó sẽ báo lỗi ngay lúc đọc config chứ không hỏng giữa chừng.

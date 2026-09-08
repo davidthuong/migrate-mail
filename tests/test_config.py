@@ -134,12 +134,6 @@ class TestAuth(ConfigCase):
             "[source]\nprovider = gmail\nauth = oauth2\n" + MINIMAL_DEST,
             "khong dung duoc auth")
 
-    def test_master_auth_says_it_is_not_built_yet(self):
-        self.assertBadConfig(
-            "[source]\nprovider = dovecot\nhost = mail.cu.vn\nauth = master\n"
-            + MINIMAL_DEST,
-            "chua duoc hien thuc")
-
     def test_nonsense_auth_is_rejected(self):
         self.assertBadConfig(
             "[source]\nhost = imap.gmail.com\nauth = kerberos\n" + MINIMAL_DEST,
@@ -196,6 +190,128 @@ class TestPrefix(ConfigCase):
                         "[dest]\nprovider = dovecot\nhost = moi.vn\n"
                         "prefix = INBOX.\n")
         self.assertEqual(cfg.dest.fixed_prefix, "INBOX.")
+
+
+MASTER_SOURCE = """
+[source]
+provider = dovecot
+host = mail.cu.vn
+auth = master
+master_user = migrate
+master_password = BiMat
+"""
+
+
+class TestMasterAuth(ConfigCase):
+    def test_master_account_is_read(self):
+        cfg = self.load(MASTER_SOURCE + MINIMAL_DEST)
+        self.assertTrue(cfg.source.uses_master)
+        self.assertEqual(cfg.source.master.user, "migrate")
+        self.assertEqual(cfg.source.master.password, "BiMat")
+        # Khong khai bao thi di duong chuan, khong phai kieu rieng cua Dovecot.
+        self.assertEqual(cfg.source.master.style, "authzid")
+
+    def test_mailbox_password_is_not_required_on_a_master_side(self):
+        """Day la ca ly do ton tai cua auth = master: khong phai di xin mat
+        khau cua tung nguoi nua."""
+        cfg = self.load(MASTER_SOURCE + MINIMAL_DEST)
+        self.assertFalse(cfg.source.needs_mailbox_password)
+        self.assertTrue(cfg.dest.needs_mailbox_password)
+
+    def test_authzid_keeps_the_mailbox_and_the_admin_apart(self):
+        cfg = self.load(MASTER_SOURCE + MINIMAL_DEST)
+        login = cfg.source.login_for("an@cu.vn", "")
+        self.assertEqual(login.user, "an@cu.vn")     # hop thu can mo
+        self.assertEqual(login.authuser, "migrate")  # tai khoan dang nhap
+        self.assertEqual(login.password, "BiMat")
+        self.assertTrue(login.via_authzid)
+
+    def test_separator_style_glues_the_two_names_together(self):
+        cfg = self.load(MASTER_SOURCE + "master_style = separator\n" + MINIMAL_DEST)
+        login = cfg.source.login_for("an@cu.vn", "")
+        self.assertEqual(login.user, "an@cu.vn*migrate")
+        self.assertEqual(login.password, "BiMat")
+        # Kieu nay di bang LOGIN thuong, khong co danh tinh thu hai.
+        self.assertFalse(login.via_authzid)
+
+    def test_separator_can_be_changed(self):
+        cfg = self.load(MASTER_SOURCE + "master_style = separator\n"
+                        "master_separator = %\n" + MINIMAL_DEST)
+        self.assertEqual(cfg.source.login_for("an@cu.vn", "").user, "an@cu.vn%migrate")
+
+    def test_quoted_separator_keeps_only_the_character(self):
+        """De nguoi doc config nhin ro dau phan cach la gi khi no la ky tu
+        de lan voi khoang trang."""
+        cfg = self.load(MASTER_SOURCE + "master_style = separator\n"
+                        'master_separator = "*"\n' + MINIMAL_DEST)
+        self.assertEqual(cfg.source.login_for("an@cu.vn", "").user, "an@cu.vn*migrate")
+
+    def test_password_can_live_in_its_own_file(self):
+        (self.tmp / "master-pass.txt").write_text("TuFile\n", encoding="utf-8")
+        cfg = self.load("[source]\nprovider = dovecot\nhost = mail.cu.vn\n"
+                        "auth = master\nmaster_user = migrate\n"
+                        "master_password_file = master-pass.txt\n" + MINIMAL_DEST)
+        self.assertEqual(cfg.source.master.password, "TuFile")
+
+    def test_password_with_a_percent_sign_survives(self):
+        """configparser mac dinh coi '%' la cu phap thay the va nem loi khong
+        he nhac den mat khau. Mat khau that thi rat hay co ky tu nay."""
+        cfg = self.load("[source]\nprovider = dovecot\nhost = mail.cu.vn\n"
+                        "auth = master\nmaster_user = migrate\n"
+                        "master_password = a%b100%\n" + MINIMAL_DEST)
+        self.assertEqual(cfg.source.master.password, "a%b100%")
+
+    def test_missing_password_file_names_the_key_that_is_wrong(self):
+        self.assertBadConfig(
+            "[source]\nprovider = dovecot\nhost = mail.cu.vn\nauth = master\n"
+            "master_user = migrate\nmaster_password_file = khong-co.txt\n"
+            + MINIMAL_DEST,
+            "master_password_file")
+
+    def test_master_without_an_account_is_rejected_at_load_time(self):
+        """Bao ngay luc doc config chu khong de hong o mailbox dau tien."""
+        self.assertBadConfig(
+            "[source]\nprovider = dovecot\nhost = mail.cu.vn\nauth = master\n"
+            + MINIMAL_DEST,
+            "master_user, master_password")
+
+    def test_provider_without_master_support_is_rejected(self):
+        self.assertBadConfig(
+            "[source]\nprovider = gmail\nauth = master\n"
+            "master_user = migrate\nmaster_password = x\n" + MINIMAL_DEST,
+            "khong dung duoc auth")
+
+    def test_nonsense_style_is_rejected(self):
+        self.assertBadConfig(
+            MASTER_SOURCE + "master_style = magic\n" + MINIMAL_DEST,
+            "master_style phai la")
+
+    def test_empty_separator_is_rejected_when_the_style_needs_one(self):
+        self.assertBadConfig(
+            MASTER_SOURCE + "master_style = separator\nmaster_separator =\n"
+            + MINIMAL_DEST,
+            "master_separator")
+
+    def test_destination_can_run_master_too(self):
+        """Ca hay dung nhat: minh la nguoi quan tri server DICH."""
+        cfg = self.load("[source]\nhost = imap.gmail.com\n"
+                        "[dest]\nprovider = dovecot\nhost = moi.vn\n"
+                        "auth = master\nmaster_user = migrate\n"
+                        "master_password = BiMat\n")
+        self.assertTrue(cfg.dest.uses_master)
+        self.assertFalse(cfg.dest.needs_mailbox_password)
+        self.assertTrue(cfg.source.needs_mailbox_password)
+
+    def test_password_auth_ignores_a_leftover_master_block(self):
+        """Doi auth ve password ma quen xoa may dong master_* thi van chay
+        bang mat khau cua tung hop thu."""
+        cfg = self.load("[source]\nprovider = dovecot\nhost = mail.cu.vn\n"
+                        "auth = password\nmaster_user = migrate\n"
+                        "master_password = BiMat\n" + MINIMAL_DEST)
+        login = cfg.source.login_for("an@cu.vn", "MatKhauCuaAn")
+        self.assertEqual(login.user, "an@cu.vn")
+        self.assertEqual(login.password, "MatKhauCuaAn")
+        self.assertFalse(login.via_authzid)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import __version__, mailboxes, providers, report, verify
-from .config import Config, load_config
+from .config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config, load_config)
 from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
                        SPECIAL_SENT, SPECIAL_TRASH, DiscoveryError, Plan,
                        DestLayout, build_plan, check_login, list_folders,
@@ -64,10 +64,12 @@ def _now() -> str:
 def _users(args, cfg: Config) -> List[User]:
     """Doc users.csv theo dung kieu xac thuc dang cau hinh.
 
-    Nguon chay OAuth2 thi khong ai co mat khau cua user, nen cot src_password
-    duoc phep de trong.
+    Dau nao chay OAuth2 hoac auth = master thi khong ai co mat khau cua tung
+    user, nen cot mat khau tuong ung duoc phep de trong.
     """
-    return load_users(args.users, need_src_password=not cfg.source.uses_oauth)
+    return load_users(args.users,
+                      need_src_password=cfg.source.needs_mailbox_password,
+                      need_dst_password=cfg.dest.needs_mailbox_password)
 
 
 # --------------------------------------------------------------------------- #
@@ -88,6 +90,7 @@ def cmd_doctor(args, cfg: Config) -> int:
     say("")
 
     problems += _check_oauth(cfg)
+    problems += _check_master(cfg)
 
     path = imapsync_available(cfg)
     if not path:
@@ -173,6 +176,42 @@ def _check_oauth(cfg: Config) -> int:
     return problems
 
 
+def _check_master(cfg: Config) -> int:
+    """Nhac nhung dieu chi kiem duoc bang mat, truoc khi chay that.
+
+    Khong thu dang nhap o day: doctor khong doc users.csv nen khong co hop thu
+    that de mo, va mot lan dang nhap master chi noi len dieu gi khi co ca hai
+    ve -- viec do la cua preflight.
+    """
+    sides = [(label, s) for label, s in (("nguon", cfg.source), ("dich", cfg.dest))
+             if s.uses_master]
+    if not sides:
+        return 0
+
+    warn = check_permissions(cfg.path)
+    if warn:
+        # config.ini luc nay chua mat khau mo duoc MOI hop thu tren server.
+        say("[CANH] %s" % warn)
+
+    for label, server in sides:
+        m = server.master
+        say("[ OK ] master %s: %s dang nhap thay cho tung hop thu (kieu %s%s)"
+            % (label, m.user, m.style,
+               ", dau phan cach %r" % m.separator
+               if m.style == MASTER_SEPARATOR else ""))
+        # Dovecot noi chung KHONG cho tai khoan quan tri dang nhap bang chinh
+        # ten no o kieu separator -- de nguoi dung dien nham dia chi mot hop
+        # thu that vao master_user thi loi bao ra rat kho hieu.
+        if server.provider.key == "dovecot" and m.style == MASTER_AUTHZID and "@" in m.user:
+            say("[CANH] master_user co dang dia chi mail. Dovecot master user "
+                "thuong la ten tran (vd 'migrate'), khong phai user@domain -- "
+                "kiem lai bang preflight tren mot hop thu truoc.")
+    say("[ OK ] cot mat khau trong users.csv duoc phep de trong o dau chay master")
+    # Khong co gi o day co the KET LUAN la hong: mot lan dang nhap that moi
+    # noi len duoc, va do la viec cua preflight.
+    return 0
+
+
 def _print_prep(provider, side: str = "") -> None:
     if not provider.prep:
         return
@@ -242,12 +281,18 @@ def cmd_mkusers(args, cfg: Config) -> int:
     say("")
 
     # Cot src_password luon de trong: Get-Mailbox khong cho ra mat khau cua
-    # user. Voi nguon chay OAuth2 thi nhu vay la du (load_users cho phep trong),
-    # voi nguon chay password thi phai dien tay -- noi ro o cuoi lenh.
+    # user. Voi nguon chay OAuth2 hay master thi nhu vay la du (load_users cho
+    # phep trong), voi nguon chay password thi phai dien tay -- noi ro o cuoi
+    # lenh.
+    #
+    # Ben dich cung vay: khi dich chay master, sinh mat khau ngau nhien roi
+    # bao "tao mailbox voi dung nhung mat khau nay" la loi khuyen sai, vi
+    # khong cho nao dung toi chung nua.
+    blank_dst = args.blank_passwords or not cfg.dest.needs_mailbox_password
     rows = mailboxes.build_rows(
         parsed.mailboxes, dst_domain=args.dst_domain,
-        dst_password=args.dst_password,
-        blank_passwords=args.blank_passwords)
+        dst_password=args.dst_password if not blank_dst else "",
+        blank_passwords=blank_dst)
 
     say("Dia chi ben dich (%s):"
         % ("doi domain sang @%s" % args.dst_domain.strip().lstrip("@")
@@ -274,7 +319,11 @@ def cmd_mkusers(args, cfg: Config) -> int:
         say("Da dat quyen 600 cho file nay.")
 
     say("")
-    if args.blank_passwords:
+    if not cfg.dest.needs_mailbox_password:
+        say("Dich dang auth = %s nen cot dst_password de trong la dung: dang"
+            % cfg.dest.auth)
+        say("nhap di bang tai khoan chung, khong qua mat khau tung hop thu.")
+    elif args.blank_passwords:
         say("Cot dst_password dang de trong: users.csv chua doc duoc, phai dien")
         say("vao truoc khi chay preflight.")
     elif args.dst_password:
@@ -282,8 +331,9 @@ def cmd_mkusers(args, cfg: Config) -> int:
     else:
         say("Mat khau ben dich do tool sinh ra. Phai tao mailbox ben dich VOI")
         say("DUNG nhung mat khau nay, hoac sua lai cot dst_password cho khop.")
-    if cfg.source.uses_oauth:
-        say("Nguon chay OAuth2 nen cot src_password de trong la dung.")
+    if not cfg.source.needs_mailbox_password:
+        say("Nguon dang auth = %s nen cot src_password de trong la dung."
+            % cfg.source.auth)
     else:
         say("Nguon dang auth = %s: phai dien cot src_password tay, Get-Mailbox"
             % cfg.source.auth)
@@ -939,9 +989,7 @@ def cmd_providers(args, cfg: Optional[Config]) -> int:
         # 'master' co trong danh sach de config nhan ra, nhung phan dang nhap
         # bang tai khoan quan tri chua lam -- noi ro thay vi de nguoi doc tuong
         # la dung duoc ngay.
-        say("xac thuc      : %s"
-            % ", ".join(m + " (chua ho tro)" if m == providers.AUTH_MASTER else m
-                        for m in p.auth_modes))
+        say("xac thuc      : %s" % ", ".join(p.auth_modes))
         if p.aliases:
             say("goi khac      : %s" % ", ".join(p.aliases))
         if p.max_connections:

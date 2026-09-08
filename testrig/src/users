@@ -1,0 +1,16 @@
+# Hop thu ben NGUON. Dinh dang passwd-file cua Dovecot:
+#   user:mat_khau:uid:gid:(gecos):home:(shell):(extra)
+#
+# Phai ghi du uid/gid/home chu khong duoc rut gon con "user:mat_khau": file
+# nay lam CA passdb lan userdb, va userdb doi cac cot do. Thieu thi Dovecot
+# bao "missing userdb info", con phia client chi thay "[UNAVAILABLE] Internal
+# error" -- khong dan ai nghi toi day. default_fields trong dovecot.conf
+# khong bu duoc cho nay.
+#
+# Mat khau de {PLAIN} vi day la rig vut di. Ca bai test la de chung minh
+# KHONG can toi nhung mat khau nay -- chung chi dung cho seed.py do du lieu
+# mau vao, va cho buoc doi chieu "master lam duoc dung nhung gi mat khau
+# that lam duoc".
+an@cu.vn:{PLAIN}MatKhauCuaAn:5000:5000::/var/vmail/cu.vn/an::
+binh@cu.vn:{PLAIN}MatKhauCuaBinh:5000:5000::/var/vmail/cu.vn/binh::
+ketoan@cu.vn:{PLAIN}MatKhauKeToan:5000:5000::/var/vmail/cu.vn/ketoan::

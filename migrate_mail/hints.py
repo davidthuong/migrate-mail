@@ -146,6 +146,33 @@ _AUTH_RULES = [
           "tao trong phan bao mat cua account roi dan vao cot src_password.",
           scope=("yahoo", "zoho", "icloud"), family="auth"),
 
+    # Ba luat duoi day chi noi len tieng khi dang chay auth = master: cac mau
+    # nay hau nhu chi xuat hien sau khi tool ep --authmech PLAIN, nen khong
+    # can gioi han theo provider.
+    _rule(13, r"unsupported authentication mechanism|"
+              r"authentication mechanism[^\n]*(not supported|unsupported)|"
+              r"\[CANNOT\]|sasl.*mechanism.*(unknown|not available)",
+          "Server tu choi co che SASL PLAIN -- day la duong ma auth = master "
+          "di qua. Doi master_style = separator trong config.ini (dang nhap "
+          "kieu hopthu*quantri, Dovecot hieu), roi chay lai preflight.",
+          family="auth"),
+
+    _rule(13, r"plaintext authentication disallowed|"
+              r"login[^\n]*disabled[^\n]*(plain|non-secure)",
+          "Server chi cho gui mat khau qua ket noi ma hoa. Dat ssl = true va "
+          "port = 993 cho dau dang bao loi trong config.ini -- voi "
+          "auth = master thi day la mat khau mo duoc moi hop thu, cang khong "
+          "duoc di duong khong ma hoa.",
+          family="auth"),
+
+    _rule(14, r"authorization failed|not authorized to (login|access) as|"
+              r"proxy(auth)? (failed|denied)|permission denied.*authent",
+          "Dang nhap duoc bang tai khoan quan tri nhung server khong cho no "
+          "mo hop thu nay. Kiem: (a) master_user co dung quyen quan tri "
+          "khong, (b) hop thu dich da duoc tao chua, (c) voi Dovecot thi "
+          "passdb quan tri phai co 'master = yes'.",
+          family="auth"),
+
     _rule(15, r"authenticationfailed|invalid credentials|login failed|"
               r"authentication fail",
           "Sai thong tin dang nhap. Kiem tra lai users.csv: phia nguon (%(nguon)s) "
