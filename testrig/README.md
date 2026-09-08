@@ -32,13 +32,27 @@ Bước này tách lỗi Dovecot khỏi lỗi của migrate-mail. Bỏ qua nó l
 buổi debug nhầm chỗ:
 
 ```bash
+# passdb: master có mở được hộp thư người khác không
 docker exec mm-src doveadm auth login 'an@cu.vn*migrate' MatKhauMasterNguon
 docker exec mm-dst doveadm auth login 'an@moi.vn*migrate' MatKhauMasterDich
+
+# userdb: hộp thư đó có chỗ chứa mail không
+docker exec mm-src doveadm user an@cu.vn
+docker exec mm-dst doveadm user an@moi.vn
 ```
 
-Cả hai phải in `passdb: ... auth succeeded`. Không qua thì vấn đề nằm trong
-`src/dovecot.conf` — dòng đáng ngờ nhất là `master = yes` trong khối `passdb`
-đầu tiên; vài bản Dovecot cần thêm `result_success = continue` ở đó.
+Phải chạy **cả hai lệnh**, không được bỏ lệnh dưới. `doveadm auth login` chỉ
+kiểm passdb; userdb hỏng thì nó vẫn in `auth succeeded` trong khi mọi lần đăng
+nhập IMAP thật đều chết với `[UNAVAILABLE] Internal error occurred` — một câu
+không hề nhắc tới userdb. Đây là lỗi rig này đã dính đúng một lần: file `users`
+viết gọn thành `user:mật_khẩu` nên thiếu cột uid/gid/home.
+
+`doveadm user` phải in ra `uid`, `gid`, `home`. Không ra gì thì xem
+`docker logs mm-src` — dòng `missing userdb info` nằm ở đó.
+
+Sai ở tầng passdb thì dòng đáng ngờ nhất là `master = yes` trong khối `passdb`
+đầu tiên của `src/dovecot.conf`; vài bản Dovecot cần thêm
+`result_success = continue`. (Dovecot 2.3.19 trên Ubuntu 24.04 thì **không** cần.)
 
 ## Đổ dữ liệu mẫu
 
@@ -97,19 +111,36 @@ thế và ném lỗi không hề nhắc đến mật khẩu; chỗ này đã s�
 
 ## Bốn câu hỏi rig này sinh ra để trả lời
 
-1. **imapsync có thật sự gửi authzid qua `--authuser1` không?** `doctor` chỉ
-   kiểm được rằng tuỳ chọn đó *tồn tại* trong bản đang cài — khác với *hành xử
-   đúng*. Bước #5 trả lời. Nếu hỏng, `master_style = separator` là đường vòng
-   có sẵn, không phải sửa code.
-2. **Lệnh `NAMESPACE` trả tiền tố của ai?** Khi đăng nhập bằng master, nó trả
-   namespace của hộp thư *khách* hay của *master*? Trả nhầm thì folder mọc sai
-   chỗ, và sai một cách im lặng. Bước #3 phát hiện.
-3. **`mail_max_userip_connections` đếm theo ai?** Nếu Dovecot đếm theo master
-   user thay vì theo từng hộp thư thì `workers = 3` chạm trần sớm hơn hẳn — cái
-   này ảnh hưởng thẳng tới lịch chạy của một ca migrate thật. Bước #7 với 3
-   luồng song song sẽ lộ.
-4. **Master có quyền ghi bên đích không?** Đọc được không có nghĩa là `APPEND`
-   và tạo folder được. Bước #9.
+Đã chạy thật một lượt: **Ubuntu 24.04, Dovecot 2.3.19.1, imapsync 2.314,
+Python 3.12** (2026-09-08). Cả bốn đều dương tính.
+
+**1. imapsync có thật sự gửi authzid qua `--authuser1` không?** — **Có.**
+`doctor` chỉ kiểm được rằng tuỳ chọn đó *tồn tại*, khác với hành xử đúng. Chạy
+thật thì dòng lệnh ra `--user1 an@cu.vn --authuser1 migrate --authmech1 PLAIN`
+và 30/30 mail sang đủ, 10/10 folder, 0 lỗi. `master_style = separator` cũng
+chạy, ra `--user1 an@cu.vn*migrate` và không kèm `--authuser1`.
+
+**2. Lệnh `NAMESPACE` trả tiền tố của ai?** — **Của hộp thư khách**, đúng cái
+mình cần. `INBOX.Khách hàng.Dự án A` bên nguồn thành `Khách hàng/Dự án A` bên
+đích: tiền tố bị cắt, dấu phân cách đổi từ `.` sang `/`, tên có dấu nguyên vẹn.
+
+**3. `mail_max_userip_connections` đếm theo ai?** — **Theo hộp thư đích, không
+theo master user.** Hạ trần xuống `2` rồi chạy 3 mailbox song song bằng cùng
+một tài khoản `migrate`: không hộp nào bị từ chối. Nghĩa là **không phải giảm
+`workers` chỉ vì đang dùng `auth = master`**.
+
+**4. Master có quyền ghi bên đích không?** — **Có**, kể cả tạo folder mới. Chạy
+master ở *cả hai* đầu với `users.csv` chỉ còn hai cột địa chỉ: 331 mail,
+16.6 MB, 2/2 mailbox OK, `verify` đối chiếu 331 mail lệch 0 ngày.
+
+Hai lỗi tìm ra trong lúc dựng, đã sửa trong rig này:
+
+- File `users` viết gọn thành `user:mật_khẩu` thiếu cột uid/gid/home. Triệu
+  chứng phía client là `[UNAVAILABLE] Internal error` — không nhắc gì tới
+  userdb. Vì vậy phần kiểm ở trên giờ có thêm `doveadm user`.
+- `seed.py` không bọc dấu nháy tên folder. Tên có khoảng trắng
+  (`INBOX.Cong viec`) làm `APPEND` **treo** chứ không báo lỗi: server trả `BAD`
+  thay vì `+`, còn `imaplib` ngồi đợi mãi cái `+` để gửi literal.
 
 ## Zimbra
 

@@ -1,7 +1,8 @@
-# Hop thu ben DICH.
+# Hop thu ben DICH. Dinh dang giong src/users -- doc ghi chu o file do de biet
+# vi sao phai ghi du cot uid/gid/home.
 #
 # CO Y THIEU ketoan@moi.vn. Buoc #7 trong README dua vao cho nay: master dang
 # nhap duoc nhung hop thu dich chua ton tai. Muon biet loi bao ra co doc duoc
 # khong, chu khong phai de no thanh cong.
-an@moi.vn:{PLAIN}MatKhauDichAn
-binh@moi.vn:{PLAIN}MatKhauDichBinh
+an@moi.vn:{PLAIN}MatKhauDichAn:5000:5000::/var/vmail/moi.vn/an::
+binh@moi.vn:{PLAIN}MatKhauDichBinh:5000:5000::/var/vmail/moi.vn/binh::

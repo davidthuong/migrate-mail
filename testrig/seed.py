@@ -83,6 +83,18 @@ def utf7_encode(name):
     return "".join(out)
 
 
+def imap_name(name):
+    """Ten folder da san sang dat vao mot lenh IMAP: encode UTF-7 roi boc nhay.
+
+    imaplib KHONG tu boc dau nhay. Mot ten co khoang trang ("INBOX.Cong viec")
+    lam hong ca cau lenh, va trieu chung khong phai la bao loi ma la APPEND
+    TREO: server tra BAD thay vi tra dau '+', con imaplib thi ngoi doi mai cai
+    dau '+' do de gui literal.
+    """
+    escaped = utf7_encode(name).replace(chr(92), chr(92) * 2).replace('"', chr(92) + '"')
+    return '"' + escaped + '"'
+
+
 def make_message(subject, days_ago, filler_bytes=0):
     msg = EmailMessage()
     when = time.time() - days_ago * 86400
@@ -104,15 +116,17 @@ def make_message(subject, days_ago, filler_bytes=0):
 
 def append(conn, folder, msg, when, seen=True):
     flags = "(" + chr(92) + "Seen)" if seen else None
-    conn.append(utf7_encode(folder), flags,
-                imaplib.Time2Internaldate(when), msg.as_bytes())
+    typ, data = conn.append(imap_name(folder), flags,
+                            imaplib.Time2Internaldate(when), msg.as_bytes())
+    if typ != "OK":
+        raise RuntimeError("APPEND vao %s that bai: %s" % (folder, data))
 
 
 def ensure(conn, folder):
-    typ, data = conn.create(utf7_encode(folder))
+    typ, data = conn.create(imap_name(folder))
     if typ != "OK" and b"exist" not in b" ".join(data or []).lower():
         print("  canh bao: khong tao duoc %s: %s" % (folder, data))
-    conn.subscribe(utf7_encode(folder))
+    conn.subscribe(imap_name(folder))
 
 
 def connect(host, port, user, password):
