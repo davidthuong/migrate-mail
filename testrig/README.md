@@ -216,7 +216,16 @@ Không cần Docker, không cần Dovecot, chạy ~10 giây; cần openssl, perl
 gọi `IO::Socket::SSL` y như imapsync, một cái dựng context y như
 `discover.ssl_context()`. Exit 0 khi mọi ô khớp mong đợi.
 
-Đã chạy (2026-09-11): **có kiểm tên**, cả hai nửa.
+Đã chạy (2026-09-11) trên hai máy, cùng một kết quả: **có kiểm tên**, cả hai
+nửa, 10/10 ô khớp.
+
+- VPS thật — Ubuntu 24.04 (6.8.0), `IO::Socket::SSL` 2.085, Python 3.12.3,
+  OpenSSL 3.0.13, imapsync 2.314.
+- Máy dev Windows, Git Bash — `IO::Socket::SSL` 2.098, OpenSSL 3.5.
+
+Chạy trên cả hai không phải cho đủ bộ. Việc gắn callback kiểm tên tự động chỉ
+có từ `IO::Socket::SSL` 1.79; bản trên VPS mới là bản thật sự đỡ lấy một cuộc
+migrate, và nó không nhất thiết trùng bản trên máy dev.
 
 | đường | chứng chỉ đúng tên | cùng CA, **sai tên** |
 |---|---|---|
