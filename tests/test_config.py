@@ -179,6 +179,40 @@ class TestFolderDefaults(ConfigCase):
         self.assertEqual(cfg.sync.archive_folder, "")
 
 
+class TestExplicitFolderNames(ConfigCase):
+    """Vai tro nao nguoi dung viet ra thi ten do bat kha xam pham; vai tro
+    con lai nhuong cho co SPECIAL-USE doc duoc ben dich luc chay."""
+
+    def test_nothing_written_means_nothing_is_explicit(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST
+                        + "\n[sync]\nworkers = 2\n")
+        self.assertEqual(cfg.sync.explicit_folders, ())
+
+    def test_a_written_name_is_explicit(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST
+                        + "\n[sync]\njunk_folder = Rac\n")
+        self.assertEqual(cfg.sync.explicit_folders, ("junk",))
+
+    def test_a_written_but_empty_name_is_still_a_choice(self):
+        """"archive_folder =" nghia la co y giu ten cua nguon, khong phai
+        "chua nghi den" -- doc duoc co Archive ben dich cung khong duoc de len."""
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST
+                        + "\n[sync]\narchive_folder =\n")
+        self.assertEqual(cfg.sync.explicit_folders, ("archive",))
+
+    def test_a_config_without_a_sync_section_is_explicit_about_nothing(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST)
+        self.assertEqual(cfg.sync.explicit_folders, ())
+
+    def test_folder_for_prefers_config_then_destination_then_provider(self):
+        cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST
+                        + "\n[sync]\nsent_folder = Da gui\n")
+        detected = {"sent": "[Gmail]/Sent Mail", "junk": "[Gmail]/Spam"}
+        self.assertEqual(cfg.sync.folder_for("sent", detected), "Da gui")
+        self.assertEqual(cfg.sync.folder_for("junk", detected), "[Gmail]/Spam")
+        self.assertEqual(cfg.sync.folder_for("trash", detected), "Trash")
+
+
 class TestPrefix(ConfigCase):
     def test_auto_detect_is_the_default_on_both_sides(self):
         cfg = self.load("[source]\nprovider = courier\nhost = mail.cu.vn\n"

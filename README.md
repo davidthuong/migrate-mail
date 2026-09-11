@@ -357,9 +357,20 @@ provider = icewarp
 host = mail.congty.vn
 ```
 
-`provider` bên đích quyết định tên folder mặc định (IceWarp gọi folder rác là
-`Spam`, Exchange gọi là `Junk Email`, Dovecot gọi là `Junk`) và bộ gợi ý xử lý
-lỗi khi ghi mail vào.
+`provider` bên đích quyết định bộ gợi ý xử lý lỗi khi ghi mail vào, và tên
+folder dự phòng cho trường hợp server đích không gắn cờ SPECIAL-USE (IceWarp gọi
+folder rác là `Spam`, Exchange gọi là `Junk Email`, Dovecot gọi là `Junk`).
+
+**Tên folder đặc biệt bên đích thì tool tự đọc, không đoán theo provider.** Nó
+đăng nhập đầu đích một lần rồi lấy cờ `\Sent` `\Drafts` `\Trash` `\Junk`
+`\Archive` của chính server đó — đúng cách nó vẫn làm với đầu nguồn. Nhờ vậy
+Gmail → Gmail ra `[Gmail]/Sent Mail`, Dovecot tiếng Việt ra `Thư đã gửi`, và
+không ai phải gõ tay. Thứ tự ưu tiên:
+
+1. Tên viết hẳn trong `[sync]` của `config.ini` — bạn gõ ra thì bạn thắng.
+2. Tên thật đọc được bên đích qua cờ SPECIAL-USE.
+3. Tên mặc định của provider đích — chỉ còn dùng khi server đích không gắn cờ
+   nào. `discover --dest` sẽ cảnh báo khi rơi vào nước này.
 
 - Tạo sẵn toàn bộ tài khoản đích trước khi chạy.
 - Đặt quota đủ lớn. Ước lượng bằng dung lượng bên nguồn, cộng thêm ~20% dự phòng.
@@ -585,18 +596,26 @@ kiểm tra cột *Mail lớn nhất* có vượt giới hạn của server đíc
 Sau bước 6, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
 với kế hoạch ở bước 3 xem tên có đúng không, trước khi đụng vào mail thật.
 
-**Bước 4 là bước dễ bỏ sót nhất.** Nó liệt kê folder có sẵn trên IceWarp và cảnh
-báo nếu tên trong `config.ini` không khớp:
+**Bước 4 là bước dễ bỏ sót nhất.** Nó liệt kê folder có sẵn trên IceWarp, nói rõ
+tên nào tool đọc được từ cờ SPECIAL-USE của server đích:
 
 ```
-CANH BAO: cac ten sau trong config.ini chua co ben IceWarp,
+Doc theo co SPECIAL-USE ben IceWarp (khong can viet vao config.ini):
+  junk_folder    = Junk E-mail
+```
+
+và chỉ cảnh báo khi còn tên không khớp thật:
+
+```
+CANH BAO: cac ten sau chua co ben IceWarp,
 imapsync se TAO MOI folder trung ten:
-  junk_folder    = Spam
+  junk_folder    = Spam    (mac dinh cua provider, ben dich khong gan co)
 ```
 
-Nghĩa là IceWarp đang gọi folder rác bằng tên khác (`Junk E-mail` chẳng hạn).
-Nếu cứ chạy, hộp thư sẽ có **hai folder rác song song** và bộ lọc IceWarp vẫn
-dùng folder cũ. Sửa `junk_folder` trong `config.ini` cho khớp rồi chạy tiếp.
+Dòng đó nghĩa là server đích không khai folder rác bằng cờ, nên tool đang dùng
+tên mặc định. Nếu cứ chạy, hộp thư sẽ có **hai folder rác song song** và bộ lọc
+IceWarp vẫn dùng folder cũ. Viết tên thật vào `junk_folder` trong `config.ini`
+rồi chạy tiếp.
 
 **Tài khoản IceWarp mới tinh thường chỉ có `INBOX` và `Spam`.** IceWarp chỉ sinh
 ra `Sent`/`Drafts`/`Trash` khi user đăng nhập và thực sự dùng. Nếu để imapsync

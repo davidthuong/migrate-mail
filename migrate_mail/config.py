@@ -7,7 +7,7 @@ import os
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import providers
 from .oauth import DEFAULT_AUTHORITY, DEFAULT_SCOPE, OAuthConf
@@ -171,6 +171,11 @@ class SyncConf:
     # De trong = giu nguyen ten folder luu tru cua nguon.
     archive_folder: str = ""
 
+    # Vai tro nao duoc viet HAN trong config.ini (co mat trong [sync], ke ca
+    # khi de trong). Chi nhung vai tro con lai moi nhuong cho ten that doc
+    # duoc ben dich -- xem folder_for.
+    explicit_folders: Tuple[str, ...] = ()
+
     # Nguon ngay thang gan cho mail ben dich:
     #   internal = INTERNALDATE cua nguon (ngay mail vao hop thu) -- mac dinh
     #   header   = header Date: trong than mail (ngay nguoi gui gui di)
@@ -180,8 +185,29 @@ class SyncConf:
     usecache: bool = True
     extra_args: List[str] = field(default_factory=list)
 
-    def folder_for(self, role: str) -> str:
-        """Ten folder dich cho mot vai tro. Chuoi rong = giu nguyen ten nguon."""
+    def folder_for(self, role: str,
+                   detected: Optional[Dict[str, str]] = None) -> str:
+        """Ten folder dich cho mot vai tro. Chuoi rong = giu nguyen ten nguon.
+
+        `detected` la {vai_tro: ten that} doc duoc tu co SPECIAL-USE cua chinh
+        server dich. Thu tu uu tien:
+
+          1. Ten viet han trong config.ini. Nguoi dung go ra thi phai ra dung
+             cai ho go, ke ca khi server dich noi khac.
+          2. Ten that ben dich. Ben nguon tool da doc co SPECIAL-USE tu lau
+             roi; doc no ca ben dich thi Gmail -> Gmail, Dovecot tieng Viet,
+             IceWarp... deu tu khop, khong phai go tay.
+          3. Mac dinh tinh cua provider dich (bang trong providers.py). Chi
+             con dung khi server dich khong gan co nao.
+
+        Bo qua buoc 2 la sinh ra folder thu hai cung cong dung: map sang
+        "Sent" trong khi Gmail goi la "[Gmail]/Sent Mail" thi hop thu moi co
+        ca hai, va hop thu di that thi rong.
+        """
+        if detected and role not in self.explicit_folders:
+            found = detected.get(role, "")
+            if found:
+                return found
         return {
             ROLE_SENT: self.sent_folder,
             ROLE_DRAFTS: self.drafts_folder,
@@ -336,6 +362,17 @@ def _server(cp: configparser.ConfigParser, section: str, base: Path,
     return conf
 
 
+# Vai tro <-> khoa trong [sync]. Dung chung cho viec doc gia tri va cho viec
+# biet nguoi dung CO viet khoa do ra hay khong.
+FOLDER_KEYS = (
+    (ROLE_SENT, "sent_folder"),
+    (ROLE_DRAFTS, "drafts_folder"),
+    (ROLE_TRASH, "trash_folder"),
+    (ROLE_JUNK, "junk_folder"),
+    (ROLE_ARCHIVE, "archive_folder"),
+)
+
+
 def _sync(cp: configparser.ConfigParser, dest: Provider) -> SyncConf:
     s = "sync"
     if not cp.has_section(s):
@@ -345,7 +382,12 @@ def _sync(cp: configparser.ConfigParser, dest: Provider) -> SyncConf:
             trash_folder=dest.folder_default(ROLE_TRASH, "Trash"),
             junk_folder=dest.folder_default(ROLE_JUNK, "Spam"),
         )
+    # Co mat trong file = nguoi dung da chon, ke ca khi de trong
+    # ("archive_folder =" nghia la co y giu nguyen ten cua nguon). Nhung vai
+    # tro khong co mat moi nhuong cho co SPECIAL-USE ben dich.
+    explicit = tuple(role for role, key in FOLDER_KEYS if cp.has_option(s, key))
     return SyncConf(
+        explicit_folders=explicit,
         workers=cp.getint(s, "workers", fallback=3),
         timeout=cp.getint(s, "timeout", fallback=300),
         errorsmax=cp.getint(s, "errorsmax", fallback=50),

@@ -14,11 +14,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from . import __version__, mailboxes, providers, report, verify
-from .config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config, load_config)
+from .config import (FOLDER_KEYS, MASTER_AUTHZID, MASTER_SEPARATOR, Config,
+                     load_config)
 from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
                        SPECIAL_SENT, SPECIAL_TRASH, DiscoveryError, Plan,
                        DestLayout, build_plan, check_login, list_folders,
-                       open_connection)
+                       open_connection, special_use_roles)
 from .hints import diagnose
 from .imaputf7 import decode as utf7_decode
 from .runner import (MODE_DRY, MODE_FOLDERS, MODE_SIZES, MODE_SYNC,
@@ -527,22 +528,36 @@ def _print_dest_folders(cfg: Config, user: User) -> int:
                 marks.append("special-use: %s" % label)
         say("    - %-38s %s" % (f.display, "  ".join(marks)))
 
-    wanted = {
-        "sent_folder": cfg.sync.sent_folder,
-        "drafts_folder": cfg.sync.drafts_folder,
-        "trash_folder": cfg.sync.trash_folder,
-        "junk_folder": cfg.sync.junk_folder,
-        "archive_folder": cfg.sync.archive_folder,
-    }
-    missing = {k: v for k, v in wanted.items() if v and v not in existing}
+    # Doi chieu ten SE DUNG chu khong phai ten viet trong config: mot vai tro
+    # de trong trong config.ini se lay ten that doc duoc o tren, va bao dong
+    # ve ten mac dinh ma tool khong dung toi chi lam nguoi doc di sua nham.
+    roles = special_use_roles(folders)
+    wanted = {key: cfg.sync.folder_for(role, roles) for role, key in FOLDER_KEYS}
+    detected = {key: utf7_decode(roles[role]) for role, key in FOLDER_KEYS
+                if role in roles and role not in cfg.sync.explicit_folders}
+    if detected:
+        say("")
+        say("  Doc theo co SPECIAL-USE ben %s (khong can viet vao config.ini):"
+            % dest_name)
+        for key, value in detected.items():
+            say("    %-14s = %s" % (key, value))
+
+    missing = [(key, wanted[key], role) for role, key in FOLDER_KEYS
+               if wanted[key] and utf7_decode(wanted[key]) not in existing]
     if missing:
         say("")
-        say("  CANH BAO: cac ten sau trong config.ini chua co ben %s," % dest_name)
+        say("  CANH BAO: cac ten sau chua co ben %s," % dest_name)
         say("  imapsync se TAO MOI folder trung ten:")
-        for key, value in missing.items():
-            say("    %-14s = %s" % (key, value))
-        say("  Neu ben dich da co folder cung cong dung nhung khac ten, hay sua")
-        say("  config.ini cho khop de mail khong bi tach ra hai noi.")
+        for key, value, role in missing:
+            # Noi ro ten do o dau ra: sua config.ini chi co tac dung voi dong
+            # dau, con dong sau la mac dinh cua provider vi ben dich khong
+            # gan co SPECIAL-USE cho vai tro do.
+            origin = ("viet trong config.ini"
+                      if role in cfg.sync.explicit_folders
+                      else "mac dinh cua provider, ben dich khong gan co")
+            say("    %-14s = %-24s (%s)" % (key, utf7_decode(value), origin))
+        say("  Neu ben dich da co folder cung cong dung nhung khac ten, viet ten")
+        say("  do vao config.ini cho khop de mail khong bi tach ra hai noi.")
     return 0
 
 
@@ -573,23 +588,37 @@ def cmd_discover(args, cfg: Config) -> int:
                 continue
             _print_plan(user, plan, cfg)
     say("")
-    _print_dest_layout(dest)
+    _print_dest_layout(dest, cfg)
     say("Xong. %d/%d mailbox do duoc." % (len(users) - failed, len(users)))
     return 0 if failed == 0 else 1
 
 
-def _print_dest_layout(dest: DestLayout) -> None:
-    """Noi ra tien to ben dich da do duoc, vi no doi ten MOI folder."""
+def _print_dest_layout(dest: DestLayout, cfg: Optional[Config] = None) -> None:
+    """Noi ra cai da do duoc ben dich, vi no quyet dinh ten folder dich."""
     layout = dest.peek()
     if dest.error:
-        say("CANH BAO: khong doc duoc namespace ben dich (%s)." % dest.error)
-        say("Ke hoach o tren dung theo gia thiet ben dich khong co tien to.")
+        say("CANH BAO: khong doc duoc cach dat ten ben dich (%s)." % dest.error)
+        say("Ke hoach o tren dung theo gia thiet ben dich khong co tien to, va")
+        say("ten folder dac biet lay theo mac dinh cua provider.")
         say("")
         return
-    if layout is not None and layout.prefix:
+    if layout is None:
+        return
+    if layout.prefix:
         say("Ben dich de folder duoi tien to '%s' (dau phan cach '%s'), nen moi"
             % (layout.prefix, layout.delim or "/"))
         say("ten dich o tren da duoc them tien to do.")
+        say("")
+    # Chi ke nhung vai tro THAT SU lay theo co ben dich: cai nguoi dung viet
+    # trong config.ini thi ho biet roi, con ke ra ca thi khong con doc ky nua.
+    used = [(key, layout.roles[role]) for role, key in FOLDER_KEYS
+            if role in layout.roles
+            and (cfg is None or role not in cfg.sync.explicit_folders)]
+    if used:
+        say("Folder dac biet ben dich lay theo co SPECIAL-USE doc duoc tu chinh")
+        say("server do:")
+        for key, value in used:
+            say("  %-14s -> %s" % (key, utf7_decode(value)))
         say("")
 
 
@@ -670,7 +699,7 @@ def cmd_sync(args, cfg: Config) -> int:
                            ", ".join(f.display for f in sources)))
                     say("       Xem './mm.py discover' de biet cach tach rieng.")
 
-    _print_dest_layout(dest_layout)
+    _print_dest_layout(dest_layout, cfg)
 
     todo = [u for u in users if u.src_user in plans]
     if not todo:

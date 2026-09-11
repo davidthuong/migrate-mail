@@ -599,11 +599,11 @@ class TestDestinationPrefixIsVisible(CliTestCase):
         nguoi doc tuong da kiem tra ca hai dau."""
         code, out = self.discover(error="login that bai")
         self.assertEqual(code, 0, out)
-        self.assertIn("khong doc duoc namespace ben dich", out)
+        self.assertIn("khong doc duoc cach dat ten ben dich", out)
 
 
 class TestDiscoverDest(CliTestCase):
-    """`discover --dest` phai canh bao khi ten folder IceWarp khac config."""
+    """`discover --dest` phai noi ro ten nao SE dung, va canh bao khi thieu."""
 
     def run_dest(self, dest_folders):
         from migrate_mail.discover import Folder
@@ -617,15 +617,43 @@ class TestDiscoverDest(CliTestCase):
         with mock.patch("migrate_mail.cli.list_folders", side_effect=fake):
             return self.run_cli("discover", "--dest", "--only", "an@cu.com")
 
-    def test_warns_when_configured_name_absent(self):
+    def test_takes_the_name_the_destination_flags_itself(self):
+        """Dich goi folder rac la 'Junk E-mail' thi dung ten do, khong canh bao.
+
+        Truoc day tool doi chieu voi mac dinh 'Spam' cua provider roi bao
+        thieu, va nguoi van hanh phai tu go ten vao config.ini -- quen mot cai
+        la hop thu moi co hai folder rac song song.
+        """
+        code, out = self.run_dest([
+            ("INBOX", []), ("Sent", ["sent"]), ("Drafts", ["drafts"]),
+            ("Trash", ["trash"]), ("Junk E-mail", ["junk"]),
+        ])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("CANH BAO", out)
+        self.assertIn("junk_folder    = Junk E-mail", out)
+
+    def test_warns_when_the_name_written_in_config_is_absent(self):
+        """Nguoi dung go han ten ra thi ten do thang, va thieu thi phai bao."""
+        cfg = (self.tmp / "config.ini")
+        cfg.write_text(
+            cfg.read_text(encoding="utf-8").replace(
+                "workers = 2", "workers = 2\njunk_folder = Spam"),
+            encoding="utf-8")
         code, out = self.run_dest([
             ("INBOX", []), ("Sent", ["sent"]), ("Drafts", ["drafts"]),
             ("Trash", ["trash"]), ("Junk E-mail", ["junk"]),
         ])
         self.assertEqual(code, 0, out)
         self.assertIn("CANH BAO", out)
-        self.assertIn("junk_folder", out)          # Spam khong co -> canh bao
-        self.assertNotIn("sent_folder", out)       # Sent co -> khong canh bao
+        self.assertIn("junk_folder", out)
+        self.assertIn("viet trong config.ini", out)
+
+    def test_warns_when_the_destination_flags_nothing(self):
+        """Server khong gan co nao -> ve lai mac dinh cua provider, va bao thieu."""
+        code, out = self.run_dest([("INBOX", []), ("Sent Items", [])])
+        self.assertEqual(code, 0, out)
+        self.assertIn("CANH BAO", out)
+        self.assertIn("mac dinh cua provider", out)
 
     def test_no_warning_when_every_name_matches(self):
         code, out = self.run_dest([

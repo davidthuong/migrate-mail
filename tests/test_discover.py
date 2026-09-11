@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from migrate_mail import providers
 from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, MasterConf,
                                  ServerConf, SyncConf)
-from migrate_mail.discover import _login, _parse_list_line, _Plain, build_plan
+from migrate_mail.discover import (_login, _parse_list_line, _Plain,
+                                   build_plan, special_use_roles)
 from migrate_mail.imaputf7 import decode
 from migrate_mail.providers import AUTH_MASTER
 
@@ -385,3 +386,39 @@ class TestMasterLogin(unittest.TestCase):
         login = server.login_for("an@cu.vn", "")
         login.password = "Biật"
         self.assertIn("Biật".encode("utf-8"), _Plain(login).data)
+
+
+class TestSpecialUseRoles(unittest.TestCase):
+    """Doc co SPECIAL-USE tu danh sach LIST cua ben dich."""
+
+    def roles(self, lines):
+        return special_use_roles(parse(lines))
+
+    def test_reads_every_role_the_server_flags(self):
+        got = self.roles(GMAIL_EN)
+        self.assertEqual(got, {"sent": "[Gmail]/Sent Mail",
+                               "drafts": "[Gmail]/Drafts",
+                               "trash": "[Gmail]/Trash",
+                               "junk": "[Gmail]/Spam"})
+
+    def test_all_mail_is_not_an_archive_folder(self):
+        """Gmail gan co All cho All Mail. Coi no la folder luu tru thi moi
+        mail trong hop thu se do vao do lan thu hai."""
+        self.assertNotIn("archive", self.roles(GMAIL_EN))
+
+    def test_returns_the_raw_name_not_the_decoded_one(self):
+        """Ten nay di thang vao --f1f2, ma imapsync noi chuyen bang ten tho."""
+        got = self.roles(GMAIL_VI)
+        self.assertNotIn("Thư đã gửi", got["sent"])
+        self.assertEqual(decode(got["sent"]), "[Gmail]/Thư đã gửi")
+
+    def test_a_container_folder_is_never_a_role(self):
+        """Folder Noselect khong SELECT duoc thi cung khong chua mail duoc."""
+        lines = [imap_line("Noselect Sent", "Archive"),
+                 imap_line("HasNoChildren Sent", "Sent Items")]
+        self.assertEqual(self.roles(lines), {"sent": "Sent Items"})
+
+    def test_a_server_that_flags_nothing_gives_nothing(self):
+        lines = [imap_line("HasNoChildren", "INBOX"),
+                 imap_line("HasNoChildren", "Sent Items")]
+        self.assertEqual(self.roles(lines), {})

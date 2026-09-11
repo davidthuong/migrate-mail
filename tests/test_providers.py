@@ -398,5 +398,68 @@ class TestMasterSupport(unittest.TestCase):
                 self.assertTrue(p.supports(providers.AUTH_PASSWORD), p.key)
 
 
+# --------------------------------------------------------------------------- #
+# Folder dac biet cua ben DICH, doc bang co SPECIAL-USE
+# --------------------------------------------------------------------------- #
+
+class TestDestinationSpecialUse(unittest.TestCase):
+    """Ben nguon tool doc co SPECIAL-USE tu lau; ben dich thi truoc day tra
+    bang tinh trong providers.py. Bang tinh khong biet account dich dat ngon
+    ngu gi, va khong biet Gmail goi folder gui di la "[Gmail]/Sent Mail" --
+    nen no de ra mot folder thu hai cung cong dung."""
+
+    GMAIL_DEST = Layout(roles={
+        "sent": "[Gmail]/Sent Mail", "drafts": "[Gmail]/Drafts",
+        "trash": "[Gmail]/Trash", "junk": "[Gmail]/Spam",
+    })
+
+    def test_workspace_to_workspace_leaves_the_special_folders_alone(self):
+        """Ca hai dau la Google Workspace (khac domain): mail gui di phai ve
+        dung hop thu di cua Gmail, khong phai mot label moi ten "Sent"."""
+        plan = plan_for(GMAIL_EN, providers.GMAIL, dest=self.GMAIL_DEST)
+        self.assertIn("[Gmail]/Sent Mail", kept(plan))
+        self.assertIn("[Gmail]/Spam", kept(plan))
+        self.assertNotIn("Sent", mapping(plan).values())
+        self.assertNotIn("Spam", mapping(plan).values())
+
+    def test_a_localised_destination_name_is_used_as_is(self):
+        """Dovecot tieng Viet gan co Junk cho "Thu rac" -- do mai la ten dung."""
+        dest = Layout(roles={"junk": "Thu rac"})
+        plan = plan_for(GMAIL_EN, providers.GMAIL, dest=dest)
+        self.assertEqual(mapping(plan)["[Gmail]/Spam"], "Thu rac")
+
+    def test_a_name_written_in_the_config_still_wins(self):
+        """Nguoi dung go ten ra thi ten do thang, ke ca khi dich noi khac."""
+        dest = Layout(roles={"junk": "Junk E-mail"})
+        plan = plan_for(GMAIL_EN, providers.GMAIL, dest=dest,
+                        junk_folder="Spam", explicit_folders=(ROLE_JUNK,))
+        self.assertEqual(mapping(plan)["[Gmail]/Spam"], "Spam")
+
+    def test_an_empty_name_written_in_the_config_keeps_the_source_name(self):
+        """"junk_folder =" de trong la mot lua chon: giu nguyen ten nguon."""
+        dest = Layout(roles={"junk": "Junk E-mail"})
+        plan = plan_for(GMAIL_EN, providers.GMAIL, dest=dest,
+                        junk_folder="", explicit_folders=(ROLE_JUNK,))
+        self.assertIn("[Gmail]/Spam", kept(plan))
+
+    def test_a_role_the_destination_does_not_flag_falls_back(self):
+        """Dich chi gan co Sent -> cac vai tro con lai van theo mac dinh cu."""
+        dest = Layout(roles={"sent": "Sent Items"})
+        maps = mapping(plan_for(GMAIL_EN, providers.GMAIL, dest=dest))
+        self.assertEqual(maps["[Gmail]/Sent Mail"], "Sent Items")
+        self.assertEqual(maps["[Gmail]/Spam"], "Spam")
+
+    def test_a_detected_name_does_not_get_the_prefix_twice(self):
+        """Ten doc tu ben dich da mang san tien to cua ben dich."""
+        dest = Layout(prefix="INBOX.", delim=".", roles={"sent": "INBOX.Sent"})
+        maps = mapping(plan_for(GMAIL_EN, providers.GMAIL, dest=dest))
+        self.assertEqual(maps["[Gmail]/Sent Mail"], "INBOX.Sent")
+
+    def test_nothing_read_from_the_destination_keeps_the_old_behaviour(self):
+        maps = mapping(plan_for(GMAIL_EN, providers.GMAIL, dest=Layout()))
+        self.assertEqual(maps["[Gmail]/Sent Mail"], "Sent")
+        self.assertEqual(maps["[Gmail]/Spam"], "Spam")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -97,7 +97,7 @@ MM="python3 mm.py --config testrig/config.testrig.ini --users testrig/users.test
 | 1 | `$MM doctor` | `[ OK ] master nguon: migrate ...`; **không** có dòng `khong chap nhan cac flag sau: --authuser1` |
 | 2 | `$MM preflight` | 3/3 đăng nhập được cả hai đầu, dù `users.testrig.csv` không có cột `src_password` |
 | 3 | `$MM discover` | folder hiện đúng chữ có dấu; tiền tố `INBOX.` bị cắt khỏi tên đích |
-| 4 | `$MM sync --only an@cu.vn --dry` | kế hoạch đúng, không lỗi |
+| 4 | `$MM sync --only an@cu.vn --dry` | kế hoạch đúng, không lỗi; folder rác đổ vào **`INBOX.Junk`** chứ không phải `Spam` — `config.testrig.ini` cố tình không khai `junk_folder`, nên tên đó chỉ có thể đến từ cờ `\Junk` đọc được ở đầu đích |
 | 5 | `$MM sync --only an@cu.vn` | mail sang đủ; log trong `logs/` có `<passfile>` chứ **không** có `MatKhauMasterNguon` |
 | 6 | `$MM verify --only an@cu.vn` | ngày tháng khớp |
 | 7 | `$MM sync` | `an` + `binh` OK, `ketoan` fail — **đọc gợi ý xem có chỉ đúng "hộp thư đích chưa tạo" không** |
@@ -118,6 +118,13 @@ hỏng với gợi ý *"đổi master_style = separator"* ngược lại.
 **Server không quảng bá SPECIAL-USE** (Courier, Dovecot đời cũ). Comment bốn
 khối `mailbox ... special_use` trong `src/dovecot.conf`, build lại, chạy `discover`:
 folder đặc biệt phải vẫn được nhận ra, lần này theo **tên**.
+
+**Đầu đích không quảng bá SPECIAL-USE.** Comment bốn khối `mailbox ... special_use`
+trong `dst/dovecot.conf` rồi build lại đầu đích. Giờ tool không đọc được gì bên
+đích nữa nên phải lùi về tên mặc định của provider — `discover --dest` phải nói
+đúng điều đó (`mac dinh cua provider, ben dich khong gan co`) và cảnh báo rằng
+`Spam` sắp được tạo mới. Đây là nửa còn lại của bài #4: một bên chứng minh tool
+đọc được cờ, một bên chứng minh nó biết mình *không* đọc được.
 
 **Chạy qua cổng không mã hoá.** Mặc định của rig là TLS 993, giống mọi ca
 migrate thật. Đổi hai đầu sang `port = 10143` / `20143` và `ssl = false` để thử

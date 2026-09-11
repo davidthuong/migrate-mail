@@ -9,6 +9,12 @@ nha cung cap va tuy ngon ngu cua account. Nen thu tu uu tien la:
   2. Ten folder, doi chieu voi bang trong providers.py. Chi dung khi server
      khong gan co -- Courier, Exchange doi cu, mot so ban Dovecot cu.
 
+Ben DICH cung the: ten folder dac biet duoc doc bang co SPECIAL-USE cua chinh
+server dich (special_use_roles), chu khong tra bang tinh theo provider. Bang
+tinh khong biet account dich dat ngon ngu gi, cung khong biet Gmail goi hop
+thu di la "[Gmail]/Sent Mail" -- doan sai o day thi mail do vao mot folder
+moi nam canh folder that.
+
 Viec phan loai nam trong providers.Provider.classify; file nay lo phan noi
 chuyen voi server va rap ket qua thanh mot Plan.
 """
@@ -22,7 +28,7 @@ import ssl
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from . import oauth, providers
 from .config import Config, Login, ServerConf, SyncConf
@@ -47,6 +53,7 @@ __all__ = [
     "SPECIAL_ARCHIVE", "SPECIAL_DRAFTS", "SPECIAL_FLAGGED", "SPECIAL_IMPORTANT",
     "SPECIAL_JUNK", "SPECIAL_SENT", "SPECIAL_TRASH", "build_plan", "check_login",
     "clean_imap_error", "list_folders", "open_connection",
+    "special_use_roles",
 ]
 
 
@@ -215,9 +222,12 @@ def _login(conn, server: ServerConf, login: Login) -> None:
 
 @dataclass
 class Layout:
-    """Cach mot server dat ten folder: tien to namespace va dau phan cach."""
+    """Cach mot server dat ten folder: tien to, dau phan cach, folder dac biet."""
     prefix: str = ""
     delim: str = ""
+    # {vai_tro: ten IMAP tho} doc tu co SPECIAL-USE cua chinh server nay.
+    # Rong khi server khong gan co nao, hoac khi khong doc duoc.
+    roles: Dict[str, str] = field(default_factory=dict)
 
     @property
     def known(self) -> bool:
@@ -246,18 +256,48 @@ def _namespace(conn) -> Layout:
                   delim=(delim or b"").decode("ascii", "replace"))
 
 
+def special_use_roles(folders: List[Folder]) -> Dict[str, str]:
+    """{vai_tro: ten tho} cua nhung folder co gan co SPECIAL-USE.
+
+    Dung cho ben DICH: biet server dich goi folder gui di la gi thi khoi phai
+    go tay vao config.ini, va khoi tao nham mot folder thu hai cung cong dung.
+
+    Tra ve ten THO chu khong phai ten da decode: day la ten se di vao --f1f2
+    cua imapsync, ma imapsync noi chuyen voi server bang ten tho.
+
+    Folder dau tien mang co nao thi giu co do. Mot server binh thuong chi gan
+    moi co mot lan; neu co hai thi lay cai LIST tra ve truoc -- doan bua giua
+    hai cai con te hon la chon mot cai on dinh.
+    """
+    out: Dict[str, str] = {}
+    for f in folders:
+        if f.has(NOSELECT):
+            continue
+        for flag, role in providers.FLAG_ROLES.items():
+            if f.has(flag) and role not in out:
+                out[role] = f.raw
+    return out
+
+
 def resolve_layout(server: ServerConf, detected: Layout) -> Layout:
-    """Ghep cai do duoc voi cai viet trong config. Config thang."""
+    """Ghep cai do duoc voi cai viet trong config. Config thang.
+
+    Chi TIEN TO la thu config viet de len duoc. Co SPECIAL-USE thi khong:
+    do la su that doc tu server, khong phai mot lua chon.
+    """
     if server.detect_prefix:
         return detected
-    return Layout(prefix=server.fixed_prefix, delim=detected.delim)
+    return Layout(prefix=server.fixed_prefix, delim=detected.delim,
+                  roles=detected.roles)
 
 
 def server_layout(cfg: Config, user: User, side: str, timeout: int = 60) -> Layout:
-    """Dang nhap mot dau chi de doc NAMESPACE. Nem DiscoveryError neu hong."""
+    """Dang nhap mot dau de doc NAMESPACE va cac folder dac biet.
+
+    Van ket noi ca khi config viet cung tien to: tien to chi la mot nua cau
+    tra loi, nua con lai la ten that cua Sent/Drafts/Trash/Junk ben do.
+    """
     server, login = _side(cfg, user, side)
-    if not server.detect_prefix:
-        return Layout(prefix=server.fixed_prefix)
     try:
         conn = _connect(server, timeout)
     except (socket.error, OSError) as exc:
@@ -265,7 +305,14 @@ def server_layout(cfg: Config, user: User, side: str, timeout: int = 60) -> Layo
                              % (server.label, server.host, server.port, exc))
     try:
         _login(conn, server, login)
-        return _namespace(conn)
+        detected = _namespace(conn)
+        # LIST hong khong lam hong ca lan chay: mat phan doc co SPECIAL-USE
+        # thi quay ve ten mac dinh cua provider, dung hanh vi cu.
+        try:
+            detected.roles = special_use_roles(_read_folders(conn))
+        except (imaplib.IMAP4.error, DiscoveryError):
+            pass
+        return resolve_layout(server, detected)
     except (imaplib.IMAP4.error, OAuthError) as exc:
         raise DiscoveryError("login %s that bai: %s"
                              % (server.label, clean_imap_error(exc)))
@@ -279,11 +326,12 @@ def server_layout(cfg: Config, user: User, side: str, timeout: int = 60) -> Layo
 class DestLayout:
     """Cach dat ten folder cua ben dich, do mot lan roi dung chung ca lan chay.
 
-    Vi sao do mot lan chu khong do tung mailbox: namespace la thuoc tinh cua
-    server chu khong phai cua tung hop thu, va mot lan chay 20 mailbox thi 20
-    lan dang nhap chi de hoi cung mot cau la phi. Neu do khong duoc thi quay
-    ve "khong co tien to" -- dung hanh vi cu -- chu khong chan ca lan chay:
-    ben dich hong that thi imapsync se bao, khong can ta chan truoc.
+    Vi sao do mot lan chu khong do tung mailbox: tien to namespace va ten cac
+    folder dac biet la thuoc tinh cua server chu khong phai cua tung hop thu,
+    va mot lan chay 20 mailbox thi 20 lan dang nhap chi de hoi cung mot cau la
+    phi. Do khong duoc thi quay ve cai viet trong config -- dung hanh vi cu --
+    chu khong chan ca lan chay: ben dich hong that thi imapsync se bao, khong
+    can ta chan truoc.
     """
 
     def __init__(self, cfg: Config):
@@ -300,7 +348,9 @@ class DestLayout:
                 self._value = server_layout(self.cfg, user, "dest")
             except DiscoveryError as exc:
                 self.error = str(exc)
-                self._value = Layout()
+                # Giu lai tien to viet trong config: khong doc duoc ben dich
+                # khong phai la ly do de vut bo cai nguoi dung da khai bao.
+                self._value = Layout(prefix=self.cfg.dest.fixed_prefix)
             return self._value
 
     def peek(self) -> Optional[Layout]:
@@ -315,6 +365,22 @@ def _side(cfg: Config, user: User, side: str) -> Tuple[ServerConf, Login]:
     else:
         server, mailbox, password = cfg.dest, user.dst_user, user.dst_password
     return server, server.login_for(mailbox, password)
+
+
+def _read_folders(conn, prefix: str = "") -> List[Folder]:
+    """LIST tren mot ket noi da dang nhap. Nem DiscoveryError neu LIST hong."""
+    typ, data = conn.list()
+    if typ != "OK":
+        raise DiscoveryError("lenh LIST that bai: %s" % typ)
+    folders = []
+    for line in data:
+        if not line:
+            continue
+        f = _parse_list_line(line)
+        if f:
+            f.prefix = prefix
+            folders.append(f)
+    return folders
 
 
 def list_folders(cfg: Config, user: User, side: str = "source",
@@ -336,19 +402,7 @@ def list_folders(cfg: Config, user: User, side: str = "source",
             raise DiscoveryError("khong lay duoc OAuth2 token: %s" % exc)
 
         prefix = resolve_layout(server, _namespace(conn)).prefix
-
-        typ, data = conn.list()
-        if typ != "OK":
-            raise DiscoveryError("lenh LIST that bai: %s" % typ)
-
-        folders = []
-        for line in data:
-            if not line:
-                continue
-            f = _parse_list_line(line)
-            if f:
-                f.prefix = prefix
-                folders.append(f)
+        folders = _read_folders(conn, prefix)
         if not folders:
             raise DiscoveryError("LIST khong tra ve folder nao")
         return folders
@@ -472,10 +526,13 @@ def build_plan(folders: List[Folder], sync: SyncConf,
             plan.excluded.append((f, value))
             continue
 
-        if kind == "role" and sync.folder_for(value):
-            # Ten viet trong config la ten ben dich roi: chi them tien to,
-            # khong dong vao dau phan cach cua no.
-            dest_name = _with_dest_prefix(sync.folder_for(value), dest.prefix)
+        role_name = sync.folder_for(value, dest.roles) if kind == "role" else ""
+        if role_name:
+            # Ten nay da la ten ben dich roi -- do la ten nguoi dung viet
+            # trong config, hoac ten that doc tu co SPECIAL-USE ben dich. Chi
+            # them tien to, khong dong vao dau phan cach cua no. Ten doc tu
+            # ben dich von da mang san tien to nen _with_dest_prefix bo qua.
+            dest_name = _with_dest_prefix(role_name, dest.prefix)
         else:
             # Ten suy ra tu nguon: doi dau phan cach roi moi them tien to,
             # dung thu tu imapsync lam trong prefix_seperator_invertion.
