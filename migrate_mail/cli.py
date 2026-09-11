@@ -1026,9 +1026,6 @@ def cmd_providers(args, cfg: Optional[Config]) -> int:
         say("=== %s (provider = %s) ===" % (p.name, p.key))
         say("host mac dinh : %s" % (p.host or "(phai tu dien trong config.ini)"))
         say("cong          : %d (ssl=%s)" % (p.port, p.ssl))
-        # 'master' co trong danh sach de config nhan ra, nhung phan dang nhap
-        # bang tai khoan quan tri chua lam -- noi ro thay vi de nguoi doc tuong
-        # la dung duoc ngay.
         say("xac thuc      : %s" % ", ".join(p.auth_modes))
         if p.aliases:
             say("goi khac      : %s" % ", ".join(p.aliases))

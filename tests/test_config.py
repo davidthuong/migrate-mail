@@ -112,6 +112,21 @@ class TestAuth(ConfigCase):
         self.assertTrue(cfg.source.uses_oauth)
         self.assertEqual(cfg.source.oauth.tenant, "contoso.onmicrosoft.com")
 
+    def test_percent_in_a_client_secret_survives(self):
+        """Cung ly do voi master_password: '%' khong duoc hieu thanh cu phap
+        thay the. Secret cua Entra ID sinh ra ngau nhien, khong chon ky tu."""
+        cfg = self.load("""
+            [source]
+            provider = m365
+            auth = oauth2
+            oauth_tenant = contoso.onmicrosoft.com
+            oauth_client_id = abc
+            oauth_client_secret = s3cret%40~x
+            [dest]
+            host = mail.congty.vn
+            """)
+        self.assertEqual(cfg.source.oauth.client_secret, "s3cret%40~x")
+
     def test_secret_can_live_in_a_separate_file(self):
         """De client secret ngoai config.ini de con backup/chia se config duoc."""
         (self.tmp / "secret.txt").write_text("tu-file\n", encoding="utf-8")
@@ -298,6 +313,19 @@ class TestMasterAuth(ConfigCase):
                         "auth = master\nmaster_user = migrate\n"
                         "master_password = a%b100%\n" + MINIMAL_DEST)
         self.assertEqual(cfg.source.master.password, "a%b100%")
+
+    def test_password_shaped_like_a_substitution_is_taken_literally(self):
+        """Kieu hong thu hai cua cung mot mac dinh, va la kieu im lang.
+
+        '%' don le thi nem loi ngay -- kho hieu nhung con thay duoc. Mot mat
+        khau lo trung dang %(...)s ma bi thay the that thi khong bao gi ca:
+        no mang mat khau khac di dang nhap, va nguoi doc config chi thay
+        'sai mat khau' o moi hop thu.
+        """
+        cfg = self.load("[source]\nprovider = dovecot\nhost = mail.cu.vn\n"
+                        "auth = master\nmaster_user = migrate\n"
+                        "master_password = %(host)s\n" + MINIMAL_DEST)
+        self.assertEqual(cfg.source.master.password, "%(host)s")
 
     def test_missing_password_file_names_the_key_that_is_wrong(self):
         self.assertBadConfig(
