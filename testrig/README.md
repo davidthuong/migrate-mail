@@ -7,6 +7,11 @@ tồn tại của thư mục này, phần còn lại chỉ là thủ tục.
 
 Rig vứt đi được: `docker compose down -v` là sạch.
 
+Một câu hỏi thứ sáu — *đối chiếu chứng chỉ có kiểm cả tên host không* — rig này
+trả lời không được, vì chứng chỉ của nó cấp đúng tên. Câu đó có phép thử riêng,
+[`./tlsprobe.sh`](#thứ-sáu-mã-hoá-đúng-chứng-chỉ-của-ai), chạy 10 giây và
+không cần Docker.
+
 > Cấu hình trong đây **không phải mẫu cho server thật**: `ssl = no` và mật khẩu
 > để trần. Đừng copy sang production.
 
@@ -189,6 +194,48 @@ Hai lỗi tìm ra trong lúc dựng, đã sửa trong rig này:
 - `seed.py` không bọc dấu nháy tên folder. Tên có khoảng trắng
   (`INBOX.Cong viec`) làm `APPEND` **treo** chứ không báo lỗi: server trả `BAD`
   thay vì `+`, còn `imaplib` ngồi đợi mãi cái `+` để gửi literal.
+
+## Thứ sáu: mã hoá đúng chứng chỉ của ai?
+
+`tls_verify` đặt cược vào một điều mà rig này **không** kiểm được: rằng bật đối
+chiếu chứng chỉ thì tên host cũng được kiểm theo. Chứng chỉ của rig cấp đúng
+tên, nên hai cách kiểm — chỉ xét chuỗi chứng chỉ, hay xét cả danh tính — đều
+cho ra cùng một kết quả "chạy được". Muốn tách chúng ra thì phải có một chứng
+chỉ do **đúng CA đang tin** ký nhưng cấp cho tên khác. Đó đúng là thứ một kẻ
+chen đường truyền có sẵn: chứng chỉ thật, do CA công cộng ký, cho tên miền của
+chính nó.
+
+```bash
+./tlsprobe.sh
+```
+
+Không cần Docker, không cần Dovecot, chạy ~10 giây; cần openssl, perl có
+`IO::Socket::SSL` (imapsync bắt buộc phải có) và python3 — VPS đã chạy
+`install.sh` thì đủ cả ba. Script tự dựng CA riêng dùng một lần, hai chứng chỉ
+(một đúng tên, một sai tên), hai server TLS, rồi cho hai client đi qua: một cái
+gọi `IO::Socket::SSL` y như imapsync, một cái dựng context y như
+`discover.ssl_context()`. Exit 0 khi mọi ô khớp mong đợi.
+
+Đã chạy (2026-09-11): **có kiểm tên**, cả hai nửa.
+
+| đường | chứng chỉ đúng tên | cùng CA, **sai tên** |
+|---|---|---|
+| `--ssl` + `SSL_verify_mode=1` | OK | từ chối: `hostname verification failed` |
+| `--tls` + `SSL_verify_mode=1` | OK | từ chối: `hostname verification failed` |
+| `imaplib` + `create_default_context` | OK | từ chối: `CERTIFICATE_VERIFY_FAILED` |
+| cả hai khi tắt đối chiếu | OK | **OK** ← lỗ hổng, đúng như nó phải hiện ra |
+
+Hai chi tiết đọc ra từ mã nguồn imapsync 2.314 và `IO::Socket::SSL` 2.098,
+khớp với bảng trên:
+
+- `set_ssl()` (chạy khi `--ssl1`) mặc định kèm `SSL_verifycn_scheme => 'imap'`;
+  `set_tls()` (khi `--tls1`) thì không. **Cả hai vẫn kiểm tên**: hễ
+  `SSL_verify_mode` bật bit `PEER` là `IO::Socket::SSL` gắn callback kiểm tên,
+  không có scheme thì rơi về scheme `default`.
+- `default` rộng hơn `imap` — ký tự đại diện ở mọi vị trí, IP được nằm trong
+  CN. Vì vậy tool viết hẳn `SSL_verifycn_scheme=imap` ra thay vì nhận mặc định
+  của imapsync: hôm nay hai thứ đó trùng nhau, nhưng một cái là lựa chọn của
+  mình, cái kia là của người khác.
 
 ## Zimbra
 

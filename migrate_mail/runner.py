@@ -166,10 +166,25 @@ def _tls_args(server: ServerConf, n: str) -> List[str]:
     Viet ra ca hai gia tri chu khong dua vao mac dinh: mac dinh cua imapsync la
     SSL_verify_mode=0 (khong kiem gi ca), va mot dong hien trong log noi ro lan
     chay do CO hay KHONG doi chieu chung chi la thu can co khi doc lai sau.
+
+    SSL_verify_mode=1 kiem chuoi chung chi. No co kiem ca TEN host khong la
+    chuyen khac, va la chuyen quan trong hon: ke chen duoc vao duong truyen
+    thuong co san mot chung chi that, cap cho ten mien cua chinh no. Da do
+    bang testrig/tlsprobe.sh -- co, IO::Socket::SSL gan callback kiem ten
+    ngay khi verify_mode bat bit PEER, ke ca khi khong ai dat scheme.
+
+    Van viet han SSL_verifycn_scheme ra: khong dat thi roi vao scheme
+    'default', von cho ky tu dai dien o moi vi tri va cho phep IP nam trong
+    CN. Scheme 'imap' chat hon, va la cai dung cho giao thuc nay. Hom nay
+    imapsync cung dang dat dung no cho duong --ssl, nhung do la mac dinh cua
+    ho chu khong phai lua chon cua minh.
     """
     if not server.ssl:
         return []
-    return ["--sslargs" + n, "SSL_verify_mode=%d" % (1 if server.tls_verify else 0)]
+    if not server.tls_verify:
+        return ["--sslargs" + n, "SSL_verify_mode=0"]
+    return ["--sslargs" + n, "SSL_verify_mode=1",
+            "--sslargs" + n, "SSL_verifycn_scheme=imap"]
 
 
 def _auth_args(server: ServerConf, login: Login, n: str, passfile: Path,

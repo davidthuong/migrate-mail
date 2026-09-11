@@ -404,6 +404,19 @@ Tool đối chiếu chứng chỉ ở **cả hai** đường: kết nối IMAP c
 (`preflight`, `discover`, `verify`) và kết nối của imapsync
 (`--sslargs1 SSL_verify_mode=1`). Không khớp thì dừng, không chạy tiếp.
 
+Và đối chiếu ở đây gồm **cả tên host**, không chỉ chuỗi chứng chỉ — chỗ này
+đáng nói riêng, vì hai việc đó hay bị gộp làm một. Kẻ chen được vào đường
+truyền thường có sẵn chứng chỉ thật, do CA công cộng ký, cấp cho tên miền của
+chính nó: chỉ kiểm "chứng chỉ này có hợp lệ không" thì nó đi qua. Đã đo bằng
+[`testrig/tlsprobe.sh`](testrig/tlsprobe.sh) — dựng một chứng chỉ do **đúng CA
+đang tin** ký nhưng cấp cho tên khác, cả hai nửa đều từ chối:
+
+```
+imapsync --sslargs SSL_verify_mode=1    TỪ CHỐI: hostname verification failed
+imaplib + create_default_context        TỪ CHỐI: CERTIFICATE_VERIFY_FAILED
+cùng hai đường đó khi tls_verify = false   kết nối được  ← chính là lỗ hổng
+```
+
 Đây không phải mặc định của thư viện. `imaplib.IMAP4_SSL` khi không được truyền
 context sẽ dùng `ssl._create_stdlib_context()` — `check_hostname = False`,
 `verify_mode = CERT_NONE`, tức là **nhận bất kỳ chứng chỉ nào**. imapsync cũng

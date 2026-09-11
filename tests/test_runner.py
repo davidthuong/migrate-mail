@@ -228,6 +228,22 @@ class TestTlsArgs(unittest.TestCase):
         self.assertIn(("--sslargs1", "SSL_verify_mode=0"),
                       pairs(build(self.cfg(verify=False))))
 
+    def test_name_check_scheme_is_pinned_not_inherited(self):
+        """Kiem chuoi chung chi va kiem ten host la hai viec khac nhau.
+
+        Khong dat scheme thi IO::Socket::SSL van kiem ten, nhung bang scheme
+        'default' -- rong hon: ky tu dai dien o moi vi tri, IP duoc nam trong
+        CN. 'imap' la scheme dung cho giao thuc nay. imapsync hom nay cung dat
+        dung no cho duong --ssl, nhung day phai la lua chon cua tool.
+        """
+        self.assertIn(("--sslargs1", "SSL_verifycn_scheme=imap"),
+                      pairs(build(self.cfg())))
+
+    def test_no_name_check_claimed_when_verification_is_off(self):
+        """Tat doi chieu ma log van ghi scheme thi nguoi doc lai tuong con kiem."""
+        p = pairs(build(self.cfg(verify=False)))
+        self.assertNotIn(("--sslargs1", "SSL_verifycn_scheme=imap"), p)
+
     def test_no_tls_args_on_a_plain_connection(self):
         cmd = build(self.cfg(ssl=False))
         self.assertNotIn("--sslargs1", cmd)
