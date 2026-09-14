@@ -976,3 +976,68 @@ class TestPreflightSavesItsResult(CliTestCase):
         self.assertEqual(code, 1)
         self.assertIn("Ket qua:", out)
         self.assertIn("khong luu duoc", out)
+
+
+class TestVerifyNamesTheMissingMail(CliTestCase):
+    """"thieu ben dich 1" tran thi khong ai truy duoc la mail nao.
+
+    Ca that: Gmail -> IceWarp, 10.271 mail. verify bao thieu 1, imapsync bao
+    "Messages found in host1 not in host2: 0". Hai con so da nhau, ma khong
+    cach nao lan ra vi bao cao khong noi do la mail nao. Co Message-Id va ngay
+    thi mo hop thu ra tim mat mot phut.
+    """
+
+    def run_verify(self, fetch_index, *extra):
+        conn = mock.MagicMock()
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
+             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+            return self.run_cli("verify", "--only", "an@cu.com", *extra)
+
+    @staticmethod
+    def _thieu(n):
+        """Folder nguon dau tien co n mail khong ton tai ben dich."""
+        seen = []
+
+        def fake(conn, folder, cap):
+            if cap == 0:                       # dau dich
+                return {"<co@x>": 1000.0}, 1, 0
+            seen.append(folder)
+            if len(seen) == 1:
+                src = {"<co@x>": 1000.0}
+                for i in range(n):
+                    src["<mat%d@x>" % i] = 1_700_000_000.0 + i
+                return src, 1 + n, 0
+            return {"<co@x>": 1000.0}, 1, 0
+        return fake
+
+    def test_in_ra_message_id_cua_mail_thieu(self):
+        _code, out = self.run_verify(self._thieu(1))
+        self.assertIn("khong thay ben dich", out)
+        self.assertIn("<mat0@x>", out)
+
+    def test_kem_ngay_de_con_tim(self):
+        _code, out = self.run_verify(self._thieu(1))
+        # Ngay cua mail do, dinh dang giong cho bao lech ngay
+        self.assertRegex(out, r"<mat0@x>\s+\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)")
+
+    def test_nhieu_qua_thi_cat_bot_va_noi_con_bao_nhieu(self):
+        _code, out = self.run_verify(self._thieu(10))
+        self.assertIn("... va 7 cai nua", out)
+        self.assertEqual(out.count("<mat"), 3)
+
+    def test_khong_thieu_thi_khong_in_gi(self):
+        _code, out = self.run_verify(self._thieu(0))
+        self.assertNotIn("khong thay ben dich", out)
+
+    def test_in_ca_khi_ngay_khong_lech(self):
+        """Thieu mail va lech ngay la hai chuyen khac nhau; folder khop ngay
+        het van co the thieu mail."""
+        _code, out = self.run_verify(self._thieu(2))
+        self.assertIn("0 lech ngay", out)
+        self.assertIn("khong thay ben dich", out)
+
+    def test_ghi_ca_vao_file_log(self):
+        self.run_verify(self._thieu(1))
+        log = next((self.tmp / "logs").glob("verify-*.txt"))
+        self.assertIn("<mat0@x>", log.read_text(encoding="utf-8"))

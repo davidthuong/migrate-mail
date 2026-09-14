@@ -926,8 +926,8 @@ def _verify_one(cfg: Config, user: User, cap: int,
                 fc.error = str(exc)
                 check.folders.append(fc)
                 continue
-            fc.compared, fc.matched, fc.mismatched, fc.samples = verify.compare_indexes(
-                src_index, dst_index)
+            (fc.compared, fc.matched, fc.mismatched, fc.samples,
+             fc.missing_samples) = verify.compare_indexes(src_index, dst_index)
             fc.missing_on_dest = max(0, len(src_index) - fc.compared)
             check.folders.append(fc)
     except DiscoveryError as exc:
@@ -998,6 +998,20 @@ def cmd_verify(args, cfg: Config) -> int:
                             out("         %s" % msgid[:60])
                             out("           nguon: %s" % _fmt_epoch(src_e))
                             out("           dich : %s" % _fmt_epoch(dst_e))
+                # Neu chi in con so "thieu ben dich N" thi khong ai truy duoc:
+                # phai biet la mail NAO moi mo hop thu ra tim duoc. In ca o
+                # folder khong lech ngay, vi thieu mail va lech ngay la hai
+                # chuyen khac nhau.
+                for fc in check.folders:
+                    if fc.error or not fc.missing_samples:
+                        continue
+                    out("       %-28s %d mail trong mau khong thay ben dich"
+                        % (fc.source_folder, fc.missing_on_dest))
+                    for msgid, src_e in fc.missing_samples:
+                        out("         %s  (%s)" % (msgid[:60], _fmt_epoch(src_e)))
+                    if fc.missing_on_dest > len(fc.missing_samples):
+                        out("         ... va %d cai nua"
+                            % (fc.missing_on_dest - len(fc.missing_samples)))
 
         total_cmp = sum(c.compared for c in checks)
         total_bad = sum(c.mismatched for c in checks)

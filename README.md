@@ -776,6 +776,18 @@ và phần không giao nhau bị báo nhầm là thiếu.
 > Con số đếm đủ và đáng tin về việc có sót mail hay không nằm ở dòng
 > `Messages found in host1 not in host2` cuối log sync — imapsync đối chiếu
 > từng mail chứ không lấy mẫu. Cột **`thiếu bên đích`** ở đây chỉ là mẫu.
+>
+> Khi hai con số đá nhau — verify bảo thiếu, imapsync bảo không — thì đừng
+> dừng ở đó. `verify` in kèm folder, `Message-Id` và ngày của vài mail nó
+> không tìm thấy:
+>
+> ```
+>        INBOX                        1 mail trong mau khong thay ben dich
+>          <178938217002.3156413.1680041847944@cu.vn>  (2026-08-15 10:36)
+> ```
+>
+> Cầm `Message-Id` đó tìm ở cả hai đầu là ra ngay: có bên đích thì lỗi nằm ở
+> phép đối chiếu, không có thì mail thiếu thật và imapsync mới là cái đếm sai.
 
 > Cột **`không kiểm được`** là mail bên nguồn vốn **không có `Message-Id`** —
 > hay gặp ở Drafts (thư soạn dở chưa gửi bao giờ thì chưa ai gắn định danh cho

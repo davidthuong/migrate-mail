@@ -138,14 +138,15 @@ class TestQuoteFolder(unittest.TestCase):
 class TestCompareIndexes(unittest.TestCase):
     def test_all_matching(self):
         src = {"<a>": 1000.0, "<b>": 2000.0}
-        compared, matched, mismatched, samples = verify.compare_indexes(src, dict(src))
+        compared, matched, mismatched, samples, missing = verify.compare_indexes(src, dict(src))
         self.assertEqual((compared, matched, mismatched), (2, 2, 0))
         self.assertEqual(samples, [])
+        self.assertEqual(missing, [])
 
     def test_small_drift_is_tolerated(self):
         src = {"<a>": 1000.0}
         dst = {"<a>": 1001.0}
-        _c, matched, mismatched, _s = verify.compare_indexes(src, dst)
+        _c, matched, mismatched, _s, _m = verify.compare_indexes(src, dst)
         self.assertEqual((matched, mismatched), (1, 0))
 
     def test_dates_reset_to_migration_time_are_caught(self):
@@ -153,20 +154,22 @@ class TestCompareIndexes(unittest.TestCase):
         migrate_time = 1_800_000_000.0
         src = {"<a>": 1000.0, "<b>": 2000.0, "<c>": 3000.0}
         dst = {k: migrate_time for k in src}
-        compared, matched, mismatched, samples = verify.compare_indexes(src, dst)
+        compared, matched, mismatched, samples, _m = verify.compare_indexes(src, dst)
         self.assertEqual((compared, matched, mismatched), (3, 0, 3))
         self.assertEqual(len(samples), 3)
 
     def test_messages_absent_on_dest_are_not_counted_as_compared(self):
         src = {"<a>": 1000.0, "<b>": 2000.0}
         dst = {"<a>": 1000.0}
-        compared, matched, mismatched, _s = verify.compare_indexes(src, dst)
+        compared, matched, mismatched, _s, missing = verify.compare_indexes(src, dst)
         self.assertEqual((compared, matched, mismatched), (1, 1, 0))
+        # Con so tran khong dan di dau: phai noi ro la mail NAO
+        self.assertEqual(missing, [("<b>", 2000.0)])
 
     def test_sample_list_is_capped(self):
         src = {"<%d>" % i: 1000.0 for i in range(50)}
         dst = {k: 9999.0 for k in src}
-        _c, _m, mismatched, samples = verify.compare_indexes(src, dst, max_samples=3)
+        _c, _mm, mismatched, samples, _miss = verify.compare_indexes(src, dst, max_samples=3)
         self.assertEqual(mismatched, 50)
         self.assertEqual(len(samples), 3)
 

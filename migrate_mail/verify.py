@@ -45,6 +45,8 @@ class FolderCheck:
     dest_total: int = 0
     error: str = ""
     samples: List[Tuple[str, float, float]] = field(default_factory=list)
+    # Vai mail co ben nguon ma khong thay ben dich, de con di tim that
+    missing_samples: List[Tuple[str, float]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -179,13 +181,25 @@ def fetch_index(conn, folder_raw: str, cap: int) -> Tuple[Dict[str, float], int,
 
 def compare_indexes(src: Dict[str, float], dst: Dict[str, float],
                     tolerance: int = TOLERANCE_SECONDS,
-                    max_samples: int = 3) -> Tuple[int, int, int, List]:
-    """So hai map ngay. Tra ve (doi chieu duoc, khop, lech, vi du lech)."""
+                    max_samples: int = 3) -> Tuple[int, int, int, List, List]:
+    """So hai map ngay.
+
+    Tra ve (doi chieu duoc, khop, lech, vi du lech, vi du thieu ben dich).
+
+    "Vi du thieu" moi la thu dung duoc: con so "thieu ben dich 1" tran khong
+    dan di dau ca. Mot ca that -- Gmail -> IceWarp, 10.271 mail -- verify bao
+    thieu 1 trong khi imapsync bao "Messages found in host1 not in host2: 0".
+    Hai con so da nhau ma khong ai truy duoc, vi khong biet no la mail NAO.
+    Co Message-Id va ngay thi tim trong hop thu mat mot phut.
+    """
     compared = matched = mismatched = 0
     samples: List[Tuple[str, float, float]] = []
+    missing: List[Tuple[str, float]] = []
     for msgid, src_epoch in src.items():
         dst_epoch = dst.get(msgid)
         if dst_epoch is None:
+            if len(missing) < max_samples:
+                missing.append((msgid, src_epoch))
             continue
         compared += 1
         if abs(src_epoch - dst_epoch) <= tolerance:
@@ -194,4 +208,4 @@ def compare_indexes(src: Dict[str, float], dst: Dict[str, float],
             mismatched += 1
             if len(samples) < max_samples:
                 samples.append((msgid, src_epoch, dst_epoch))
-    return compared, matched, mismatched, samples
+    return compared, matched, mismatched, samples, missing
