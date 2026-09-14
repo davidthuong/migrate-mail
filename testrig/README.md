@@ -171,6 +171,53 @@ Ctrl-C trong 2 giây mới thoát. Cùng lúc đó `KeyboardInterrupt` ở luồ
 mắc kẹt trong `ThreadPoolExecutor.__exit__`. Trước khi có `runner.stop_all()`,
 bấm Ctrl-C không hiện **một chữ nào** và mail vẫn chảy sang đích thêm cả phút.
 
+### Đầu đích hết chỗ
+
+Hạn mức đích là cả hỏng hay gặp nhất ngoài đời mà rig từng không chạm tới: hộp
+thư mới bên đích bị đặt 1GB trong khi hộp cũ đã 8GB, và nó chỉ lộ ra vào **giữa**
+lần chạy đầu tiên.
+
+Plugin quota đã bật sẵn trong `dst/dovecot.conf` nhưng **không** đặt hạn mức
+(`storage=0`), nên bài này chỉ cần sửa một dòng trong `dst/users`:
+
+```bash
+# thêm vào cuối dòng của binh@moi.vn (sau hai dấu ':' cuối)
+#   ...:/var/vmail/moi.vn/binh::userdb_quota_rule=*:storage=1M
+docker compose up -d --build dst
+docker exec mm-dst doveadm quota get -u binh@moi.vn   # Limit phải là 1024
+```
+
+| # | Lệnh | Đạt là thấy gì |
+|---|---|---|
+| 16 | seed rồi `$MM sync --only binh@cu.vn` | `LOI ... EXIT_OVERQUOTA`, gợi ý nói *"Hộp thư đích ... đã đầy. Tăng quota cho user đó rồi chạy lại sync"*. **Không** có `state/binh@cu.vn/done.marker` — nếu có thì `--resume` sẽ bỏ qua mailbox này và coi như xong |
+| 16b | `docker exec mm-dst sed -i 's\|storage=1M\|storage=100M\|' /etc/dovecot/users` rồi chạy lại | chỉ phần còn thiếu được chuyển, tổng khớp nguồn, `rigcount.py` báo `0 id bi lap` |
+
+Đo thật: hộp mới dùng 108/1024 KB — **chưa đầy** — mà vẫn `EXIT_OVERQUOTA`, vì
+một mail 4MB không nhét vừa phần còn lại. Đúng ca hay gặp: hộp còn chỗ nhưng một
+thư lớn thì không.
+
+Nhớ trả `dst/users` về như cũ và build lại, nếu không mọi bài sau đều vướng quota.
+
+### Một đầu biến mất giữa chừng
+
+Khác bài Ctrl-C ở chỗ không ai bấm gì cả — server chỉ biến mất. Đây mới là ca
+hay gặp nhất: nguồn quá tải, VPS đích reboot, firewall cắt phiên đang mở.
+
+Cần bóp băng thông để kịp ra tay: thêm `maxbytespersecond = 150000` vào `[sync]`.
+
+| # | Lệnh | Đạt là thấy gì |
+|---|---|---|
+| 17 | chạy `$MM sync --only binh@cu.vn`, đợi ~12s rồi `docker stop mm-src` | `LOI ... imapsync bi ha boi SIGPIPE (tin hieu 13)` — **không** phải `exit code -13`. Gợi ý nói mất kết nối và nói rõ *"KHÔNG phải lỗi đăng nhập"*. Cột `Mail` phải là số mail đã kịp sang (đối chiếu bằng `rigcount.py`), không phải `0` |
+| 17b | `docker start mm-src` rồi chạy lại | phần còn thiếu được chuyển nốt, tổng khớp nguồn, `0 id bi lap`, `verify` lệch 0 |
+| 17c | làm lại với `mm-dst` | y hệt — hai đầu hành xử giống nhau |
+
+Vì sao bài này đáng có: imapsync chết vì `SIGPIPE` khi ghi vào socket không còn
+ai ở đầu kia, và nó **không kịp in một chữ nào** — log dừng giữa dòng. Manh mối
+duy nhất là mã thoát âm, nên `runner.py` phải tự dịch nó ra chữ và thêm một dòng
+cho `diagnose()` bắt. Cũng vì khối thống kê không bao giờ được in, `parse_output`
+phải đếm lại từ chính những dòng `copied to` — nếu không báo cáo sẽ ghi `0 mail`
+cho một lần chạy đã chuyển 205 mail thật.
+
 ### Hai biến thể đáng chạy thêm
 
 **Server không cho SASL PLAIN.** Comment `auth_master_user_separator` trong

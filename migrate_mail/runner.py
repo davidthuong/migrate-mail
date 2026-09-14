@@ -90,6 +90,15 @@ _FOLDERS_RE = re.compile(r"Folders synced\s*:\s*(\d+)\s*/\s*(\d+)")
 # imapsync tu in ten ma loi cua no, khong can ta doan
 _EXIT_RE = re.compile(r"Exiting with return value\s+(\d+)\s*\(([^)]*)\)")
 
+# Moi mail chep xong imapsync in mot dong "... copied to ...", va tren dong do
+# co ca tong dung luong cong don. Dung de dem lai khi imapsync CHET giua chung:
+# luc do khoi thong ke o cuoi khong bao gio duoc in, va bao cao se ghi "0 mail"
+# cho mot lan chay da chuyen that vai tram mail. Do tren rig: giet server nguon
+# luc dang chep, dich co 205 mail, bao cao ghi 0.
+_COPIED_RE = re.compile(r"^msg\s+.*\bcopied to\b", re.M)
+_RUNNING_TOTAL_RE = re.compile(r"([\d.]+)\s+(B|KiB|MiB|GiB)\s+copied\b")
+_UNIT_BYTES = {"B": 1, "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3}
+
 
 @dataclass
 class Result:
@@ -347,6 +356,25 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
     return cmd
 
 
+# Ten tin hieu POSIX, viet san chu khong hoi signal.Signals: imapsync luon
+# chay tren Linux, nhung bao cao co the duoc doc/parse tren Windows -- ma o do
+# signal.Signals(13) nem ValueError va nhan se thanh "tin hieu 13 (tin hieu
+# 13)". Nhan trong bao cao khong duoc phu thuoc vao may nao dang doc no.
+_SIGNAL_NAMES = {
+    1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 6: "SIGABRT", 9: "SIGKILL",
+    11: "SIGSEGV", 13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM", 24: "SIGXCPU",
+    25: "SIGXFSZ",
+}
+
+
+def _signal_label(signum: int) -> str:
+    """Ten tin hieu da ha imapsync, viet cho nguoi doc bao cao."""
+    name = _SIGNAL_NAMES.get(signum)
+    if name:
+        return "imapsync bi ha boi %s (tin hieu %d)" % (name, signum)
+    return "imapsync bi ha boi tin hieu %d" % signum
+
+
 def parse_output(text: str) -> Dict[str, object]:
     out: Dict[str, object] = {"stats": {}}
     for key, pattern in _STAT_PATTERNS.items():
@@ -364,6 +392,22 @@ def parse_output(text: str) -> Dict[str, object]:
         pass                      # lay lan xuat hien cuoi cung
     if m:
         out["exit_label"] = m.group(2).strip()
+
+    # imapsync chet giua chung thi khong co khoi thong ke nao ca. Dem lai tu
+    # chinh nhung dong no da in cho tung mail -- do la mail da sang that, khong
+    # phai uoc luong. Bao cao ghi "0 mail" cho mot lan da chuyen vai tram mail
+    # la kieu sai te nhat: nguoi ta doc bao cao roi tuong chua co gi sang ca.
+    if "messages_transferred" not in out["stats"]:
+        copied = len(_COPIED_RE.findall(text))
+        if copied:
+            out["stats"]["messages_transferred"] = copied
+            out["partial"] = True
+            last = None
+            for last in _RUNNING_TOTAL_RE.finditer(text):
+                pass              # tong cong don, lay lan cuoi cung
+            if last and "bytes_transferred" not in out["stats"]:
+                out["stats"]["bytes_transferred"] = int(
+                    float(last.group(1)) * _UNIT_BYTES[last.group(2)])
     return out
 
 
@@ -441,10 +485,21 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
         result.transfer_time = float(parsed.get("transfer_time", 0.0))  # type: ignore[arg-type]
         result.folders_synced = str(parsed.get("folders_synced", ""))
         result.exit_label = str(parsed.get("exit_label", ""))
-        if result.exit_code != 0 and not result.exit_label:
+        text = "".join(chunks)
+        if result.exit_code < 0:
+            # returncode am = tien trinh bi mot tin hieu ha, khong phai no tu
+            # thoat. Python tra ve -N cho tin hieu N. Truoc day cho nay in ra
+            # "exit code -13" -- mot con so khong noi gi voi ai, va khong luat
+            # goi y nao bat duoc vi imapsync chet khong kip in mot chu.
+            result.exit_label = _signal_label(-result.exit_code)
+            # Them mot dong cho diagnose() bat: manh moi duy nhat la ma thoat,
+            # ma diagnose() thi doc van ban.
+            text += "\nmigrate-mail: imapsync killed by signal %d\n" % (
+                -result.exit_code)
+        elif result.exit_code != 0 and not result.exit_label:
             result.exit_label = "exit code %d" % result.exit_code
         if result.exit_code != 0 or result.get("errors") > 0:
-            result.hints = diagnose("".join(chunks),
+            result.hints = diagnose(text,
                                     source=cfg.source.provider.key,
                                     dest=cfg.dest.provider.key)
 

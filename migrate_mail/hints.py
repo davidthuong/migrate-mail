@@ -251,6 +251,29 @@ _COMMON_RULES = [
           "Khong ket noi duoc toi server. Kiem tra firewall cua VPS, va cong "
           "IMAP cua ca hai dau co mo cho IP nay khong."),
 
+    # Mot dau bien mat GIUA luc dang chep thi imapsync chet vi SIGPIPE (13) --
+    # no ghi vao mot socket khong con ai o dau kia. Khong co mot dong nao trong
+    # log noi ve chuyen do: log dung giua chung. Manh moi duy nhat la ma thoat,
+    # nen runner.py them mot dong "killed by signal N" cho cho nay bat.
+    # Do tren rig bang `docker stop` dau nguon luc dang chep.
+    _rule(30, r"imapsync killed by signal 13\b",
+          "Mat ket noi giua chung: mot trong hai server bien mat trong luc "
+          "dang chep (reboot, qua tai, dut mang, hoac bi firewall cat phien "
+          "dang mo). Day KHONG phai loi dang nhap. Kiem hai dau con song "
+          "khong, roi chay lai dung lenh do -- mail da chep sang khong bi chep "
+          "lai lan nua.", family="signal"),
+
+    _rule(30, r"imapsync killed by signal 9\b",
+          "imapsync bi SIGKILL, tuc bi giet thang chu khong tu thoat. Hay gap "
+          "nhat la OOM killer khi VPS het RAM -- xem `dmesg -T | tail` va "
+          "`journalctl -k | grep -i oom`. Giam workers trong config.ini roi "
+          "chay lai.", family="signal"),
+
+    _rule(32, r"imapsync killed by signal \d+",
+          "imapsync bi mot tin hieu ha giua chung chu khong tu thoat, nen no "
+          "khong kip in thong ke. Chay lai dung lenh do -- mail da chep sang "
+          "khong bi chep lai lan nua.", family="signal"),
+
     _rule(30, r"certificate verify failed|ssl.*handshake|hostname.*doesn't match",
           "Chung chi TLS cua server khong qua duoc kiem tra: het han, tu ky, "
           "hoac khong khop ten mien trong config.ini. Cach dung: sua host cho "

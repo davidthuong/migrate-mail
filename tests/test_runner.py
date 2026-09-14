@@ -658,3 +658,57 @@ class TestDeltaWindowUsesArrivalDate(unittest.TestCase):
         """imapsync qua cu khong biet --noabletosearch se dung ngay khi gap
         tuy chon la, nen doctor phai bat truoc."""
         self.assertIn("--noabletosearch", flags_used(make_cfg()))
+
+
+COPIED_LOG = """Host1: folder [INBOX] has 3 messages in total (mentioned by SELECT)
+msg INBOX/1 {576}    copied to INBOX/1     132.04 msgs/s  73.020 KiB/s 108.942 KiB copied 
+msg INBOX/2 {539}    copied to INBOX/2     132.08 msgs/s  73.022 KiB/s 109.469 KiB copied 
+msg INBOX/3 {571}    copied to INBOX/3     132.11 msgs/s  73.043 KiB/s 2.500 MiB copied 
+sleeping 2.00 s
+"""
+
+
+class TestPartialStatsWhenImapsyncDies(unittest.TestCase):
+    """imapsync chet giua chung thi khoi thong ke o cuoi khong bao gio duoc in.
+
+    Do tren rig: giet server nguon bang `docker stop` luc dang chep, dau dich
+    dem duoc 205 mail, con bao cao ghi "0 mail, 0 B". Bao cao la thu nguoi ta
+    giu lai, nen no noi "chua co gi sang ca" la kieu sai te nhat.
+    """
+
+    def test_dem_lai_tu_cac_dong_da_in(self):
+        out = parse_output(COPIED_LOG)
+        self.assertEqual(out["stats"]["messages_transferred"], 3)
+        self.assertTrue(out.get("partial"))
+
+    def test_lay_tong_dung_luong_cong_don_cuoi_cung(self):
+        out = parse_output(COPIED_LOG)
+        self.assertEqual(out["stats"]["bytes_transferred"], int(2.5 * 1024 ** 2))
+
+    def test_khoi_thong_ke_that_van_duoc_uu_tien(self):
+        """Chay xong binh thuong thi lay so cua imapsync, khong tu dem."""
+        text = COPIED_LOG + "\nMessages transferred: 999\nTotal bytes transferred: 12345\n"
+        out = parse_output(text)
+        self.assertEqual(out["stats"]["messages_transferred"], 999)
+        self.assertEqual(out["stats"]["bytes_transferred"], 12345)
+        self.assertNotIn("partial", out)
+
+    def test_khong_co_dong_nao_thi_khong_bia_ra_so(self):
+        out = parse_output("Host1: folder [INBOX] has 0 messages\n")
+        self.assertEqual(out["stats"], {})
+        self.assertNotIn("partial", out)
+
+
+class TestSignalLabel(unittest.TestCase):
+    """'exit code -13' khong noi gi voi ai doc bao cao."""
+
+    def test_sigpipe_co_ten(self):
+        label = runner._signal_label(13)
+        self.assertIn("SIGPIPE", label)
+        self.assertIn("13", label)
+
+    def test_sigkill_co_ten(self):
+        self.assertIn("SIGKILL", runner._signal_label(9))
+
+    def test_so_la_hoac_khong_phai_tin_hieu_van_khong_nem(self):
+        self.assertIn("99", runner._signal_label(99))

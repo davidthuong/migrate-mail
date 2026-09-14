@@ -1067,6 +1067,13 @@ Chung cho mọi nguồn:
 | `certificate verify failed` | Chứng chỉ TLS hết hạn, tự ký, hoặc không khớp `host` trong `config.ini` — sửa cho khớp, hoặc `tls_verify = false` nếu chắc chắn đường truyền an toàn |
 | `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
 | `Unknown option` | imapsync quá cũ so với tuỳ chọn tool dùng; chạy `doctor` |
+| `imapsync bị hạ bởi SIGPIPE (tín hiệu 13)` | Một trong hai server biến mất **giữa lúc đang chép** — reboot, quá tải, đứt mạng, firewall cắt phiên đang mở. Không phải lỗi đăng nhập. Kiểm hai đầu còn sống không rồi chạy lại đúng lệnh đó |
+| `imapsync bị hạ bởi SIGKILL (tín hiệu 9)` | Bị giết thẳng, hay gặp nhất là OOM killer khi VPS hết RAM — xem `dmesg -T \| tail`. Giảm `workers` rồi chạy lại |
+
+> Khi imapsync bị một tín hiệu hạ, nó **không kịp in khối thống kê** ở cuối. Lúc
+> đó cột `Mail` trong báo cáo được đếm lại từ chính những dòng `copied to` mà nó
+> đã in — số đó là mail đã sang thật, không phải ước lượng. Chạy lại đúng lệnh
+> cũ để chuyển nốt phần còn thiếu; mail đã chép không bị chép lại.
 
 Gmail:
 

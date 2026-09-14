@@ -533,3 +533,41 @@ class TestMergedRows(unittest.TestCase):
 
     def test_no_runs_gives_nothing(self):
         self.assertEqual(report.merged_rows(self.tmp), [])
+
+
+class TestSignalHints(unittest.TestCase):
+    """Mot dau bien mat giua luc chep thi imapsync chet vi SIGPIPE va KHONG
+    kip in mot chu nao -- log dung giua dong. Manh moi duy nhat la ma thoat,
+    nen runner.py them mot dong cho diagnose() bat."""
+
+    def test_sigpipe_noi_ve_mat_ket_noi_chu_khong_phai_dang_nhap(self):
+        tips = diagnose("msg INBOX/205 copied to INBOX/205\n"
+                        "migrate-mail: imapsync killed by signal 13\n")
+        self.assertTrue(tips)
+        joined = " ".join(tips).lower()
+        self.assertIn("mat ket noi", joined)
+        self.assertIn("khong phai loi dang nhap", joined)
+        # Phai tran an rang chay lai khong nhan doi, khong thi nguoi ta ngai
+        self.assertIn("khong bi chep lai", joined)
+
+    def test_sigkill_chi_toi_oom(self):
+        tips = diagnose("migrate-mail: imapsync killed by signal 9\n")
+        joined = " ".join(tips).lower()
+        self.assertIn("oom", joined)
+        self.assertIn("workers", joined)
+
+    def test_tin_hieu_la_van_co_goi_y_chung(self):
+        tips = diagnose("migrate-mail: imapsync killed by signal 11\n")
+        self.assertTrue(tips)
+        self.assertIn("chay lai", " ".join(tips).lower())
+
+    def test_chi_mot_goi_y_ve_tin_hieu(self):
+        """SIGPIPE khop ca luat rieng lan luat chung -- chi duoc hien mot."""
+        tips = diagnose("migrate-mail: imapsync killed by signal 13\n")
+        ve_tin_hieu = [t for t in tips if "tin hieu" in t.lower()
+                       or "mat ket noi" in t.lower()]
+        self.assertEqual(len(ve_tin_hieu), 1, tips)
+
+    def test_log_binh_thuong_khong_dinh_luat_nay(self):
+        tips = diagnose("msg INBOX/1 copied to INBOX/1\nDetected 0 errors\n")
+        self.assertNotIn("tin hieu", " ".join(tips).lower())
