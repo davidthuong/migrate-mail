@@ -288,10 +288,23 @@ lại được, và `doctor` phải kêu mỗi lần. Tin lại CA bằng
 Trước khi có `tls_verify`, bài này **im lặng đi qua** — cả hai nửa đều nhận bất
 kỳ chứng chỉ nào. Xem [mục dưới](#bốn-câu-hỏi-rig-này-sinh-ra-để-trả-lời).
 
-**Mật khẩu có `%`.** Đổi `master_password` trong `config.testrig.ini` thành
-`Mat%Khau%100` rồi chạy `$MM doctor`. Chỉ cần config **đọc được** là đạt —
-không cần đăng nhập thành công. `configparser` mặc định coi `%` là cú pháp thay
-thế và ném lỗi không hề nhắc đến mật khẩu; chỗ này đã sửa nhưng chưa ai chạy thật.
+**Mật khẩu có `%`.** `configparser` mặc định coi `%` là cú pháp thay thế và ném
+lỗi không hề nhắc đến mật khẩu. Đọc được config mới là nửa đầu; nửa sau là mật
+khẩu phải tới được server **nguyên vẹn**, nên đổi cả hai đầu rồi đăng nhập thật:
+
+```bash
+sed -i 's|^master_password = MatKhauMasterNguon|master_password = Mat%Khau%100|' \
+    testrig/config.testrig.ini
+docker exec mm-src sed -i \
+    's|migrate:{PLAIN}MatKhauMasterNguon|migrate:{PLAIN}Mat%Khau%100|' \
+    /etc/dovecot/master-users
+```
+
+`$MM doctor` phải nói **sẵn sàng**, `$MM preflight` phải đăng nhập được 2/3 như
+thường, `$MM sync` phải chuyển được mail, và log **không** được chứa chuỗi
+`Mat%Khau%100`. Đã chạy thật một lượt trên Dovecot 2.3.19, cả bốn đều đạt.
+
+Nhớ trả lại cả hai chỗ khi xong.
 
 ## Bốn câu hỏi rig này sinh ra để trả lời
 
