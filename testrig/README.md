@@ -108,6 +108,49 @@ MM="python3 mm.py --config testrig/config.testrig.ini --users testrig/users.test
 Muốn chạy lại từ đầu cho sạch: `docker compose down -v && docker compose up -d`
 rồi seed lại, và xoá `logs/` `state/` trong `testrig/`.
 
+### Vòng delta và Ctrl-C
+
+Bốn bài trên đây đều là *lần chạy đầu tiên*. Nhưng mọi ca migrate thật đều chạy
+ít nhất hai lượt — một lượt trước vài ngày, một lượt cutover — nên phần dễ hỏng
+nhất lại nằm ở lượt thứ hai.
+
+| # | Lệnh | Đạt là thấy gì |
+|---|---|---|
+| 11 | chạy `$MM sync` lần hai, không đổi gì bên nguồn | `0 mail, 0 B`. Đếm lại bên đích phải **y hệt** lượt đầu — kể cả 3 mail ở `Drafts` không có `Message-Id`, `seed.py` cố tình đổ vào để `--addheader` được chạy thật. Thành 9 là `--addheader` đã hỏng |
+| 12 | đổ thêm mail vào nguồn rồi chạy lại | chỉ **đúng số mail mới** được chuyển, không phải cả hộp |
+| 13 | Ctrl-C giữa lúc đang chép | hiện ngay `Dang dung... da bao N imapsync ket thuc`, và tiến trình tắt trong ~1 giây. Xem ghi chú dưới |
+| 14 | chạy lại sau khi cắt | phần còn thiếu được chuyển nốt, tổng khớp nguồn, `verify` lệch 0, **không mail nào nhân đôi** |
+
+Đếm bằng `rigcount.py` — `mm verify` đối chiếu *ngày tháng*, nó không trả lời
+được câu "có mail nào bị chép hai lần không", mà nhân bản thì `verify` vẫn báo
+xanh vì ngày của cả hai bản đều đúng:
+
+```bash
+python3 testrig/rigcount.py --port 10993 --user an@cu.vn  --password MatKhauCuaAn
+python3 testrig/rigcount.py --port 20993 --user an@moi.vn --password MatKhauDichAn
+```
+
+Hai lệnh phải ra cùng một tổng, `0 id bi lap`, và bên đích phải là
+`0 khong co Message-Id` — 3 mail thiếu `Message-Id` ở nguồn được `--addheader`
+gắn cho một cái lúc sang đích. Đó chính là thứ giữ cho chúng không nhân đôi ở
+lượt sau.
+
+Muốn có cửa sổ mà bấm Ctrl-C thì phải bóp băng thông, nếu không rig chạy xong
+trong 8 giây: thêm `maxbytespersecond = 120000` vào `[sync]`.
+
+Cẩn thận một cái bẫy khi tự động hoá bài #13: bash non-interactive đặt
+`SIGINT = SIG_IGN` cho tiến trình chạy nền bằng `&` (đúng chuẩn POSIX), và
+Python **giữ nguyên** trạng thái ignore đó lúc khởi động. Chạy thẳng
+`python3 mm.py ... &` rồi `kill -INT` thì tín hiệu không bao giờ tới nơi, và bài
+test sẽ tố cáo oan cái tool. Soi `grep SigIgn /proc/<pid>/status` — bit `0x2`
+bật là bài test hỏng chứ không phải tool hỏng.
+
+Vì sao bài #13 đáng có: một `SIGINT` **không** dừng được imapsync. Ngoài Docker
+nó gán `INT` cho `catch_reconnect` — nối lại hai đầu rồi chép tiếp, phải hai
+Ctrl-C trong 2 giây mới thoát. Cùng lúc đó `KeyboardInterrupt` ở luồng chính
+mắc kẹt trong `ThreadPoolExecutor.__exit__`. Trước khi có `runner.stop_all()`,
+bấm Ctrl-C không hiện **một chữ nào** và mail vẫn chảy sang đích thêm cả phút.
+
 ### Hai biến thể đáng chạy thêm
 
 **Server không cho SASL PLAIN.** Comment `auth_master_user_separator` trong

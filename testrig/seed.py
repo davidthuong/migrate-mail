@@ -95,7 +95,7 @@ def imap_name(name):
     return '"' + escaped + '"'
 
 
-def make_message(subject, days_ago, filler_bytes=0):
+def make_message(subject, days_ago, filler_bytes=0, with_id=True):
     msg = EmailMessage()
     when = time.time() - days_ago * 86400
     msg["Subject"] = subject
@@ -103,9 +103,10 @@ def make_message(subject, days_ago, filler_bytes=0):
     msg["To"] = "hop.thu@cu.vn"
     msg["Date"] = email.utils.formatdate(when)
     # Message-Id on dinh: tool dinh danh mail bang header nay, nen mail thieu
-    # no se bi nhan ban o vong delta. Co mot mail thieu Message-Id o duoi de
-    # test duong --addheader.
-    msg["Message-Id"] = email.utils.make_msgid(domain="cu.vn")
+    # no se bi nhan ban o vong delta. Mot so mail o Drafts co y KHONG co --
+    # xem seed_an() -- de con duong --addheader duoc chay that.
+    if with_id:
+        msg["Message-Id"] = email.utils.make_msgid(domain="cu.vn")
     body = u"Nội dung thử cho testrig.\n" + ("x" * 200)
     msg.set_content(body)
     if filler_bytes:
@@ -147,7 +148,18 @@ def seed_an(conn):
                 u"%s [%s]" % (SUBJECTS[(i + j) % len(SUBJECTS)], folder),
                 days_ago=30 + i * 7 + j)
             append(conn, folder, msg, when)
-    print("  %d folder, %d mail" % (len(targets), len(targets) * 3))
+
+    # Mail khong co Message-Id. Drafts la cho gap that: thu soan do dang chua
+    # gui bao gio thi chua ai gan dinh danh cho no. Neu tool bo --addheader
+    # thi may cai nay nhan ban them mot ban moi lan chay delta, va khach se
+    # thay Drafts phinh ra sau moi lan cutover.
+    for j in range(3):
+        msg, when = make_message(u"Thu nhap do dang %d (khong Message-Id)" % j,
+                                 days_ago=3 + j, with_id=False)
+        append(conn, "INBOX.Drafts", msg, when, seen=False)
+
+    print("  %d folder, %d mail (3 mail o Drafts khong co Message-Id)"
+          % (len(targets), len(targets) * 3 + 3))
 
 
 def seed_binh(conn, count, big_mb):
