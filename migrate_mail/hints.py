@@ -224,6 +224,26 @@ _COMMON_RULES = [
     # "The most frequent error is ERR_Host1_FETCH": dong tom tat do xuat hien
     # ca khi loi fetch chi la hau qua cua viec bi bop bang thong, va khi do
     # luat uu tien 10 moi la cau tra loi dung.
+    # Phien IMAP chet giua chung, KHONG phai mail hong. Gap that ngay 11/09:
+    # Gmail lam nguon, 50 loi lien tiep tren cac mail sat nhau (524, 525, 526,
+    # 527...), va ca 50 dong deu mang CUNG mot id phien cua Google. Mot phien
+    # da hong thi tra BAD cho moi lenh sau do, nen so loi chi phan anh
+    # errorsmax chu khong phan anh so mail hong.
+    #
+    # Phai dung truoc luat 22: neu de luat kia bat, nguoi ta duoc bao "mail
+    # hong san, bo qua roi danh dau hop thu la xong" -- tuc vut 50 mail con
+    # doc duoc, va danh dau xong mot hop thu con thieu.
+    _rule(21, r"could not be fetched.*\bBAD\b|\bBAD Unknown command\b",
+          "Phien doc tu %(nguon)s chet giua chung chu khong phai mail hong: "
+          "server tra BAD cho lenh FETCH. Dau hieu nhan ra la cac loi nam LIEN "
+          "TIEP tren nhung mail sat nhau, va cung mot ma phien lap lai o moi "
+          "dong 'Err ...'. Chay lai dung lenh do -- mail da chep sang khong bi "
+          "chep lai. Neu chay lai ma van dung lai o DUNG mail do thi luc ay moi "
+          "la mail hong, xu ly theo huong kia. Gap nhieu o Gmail sau vai nghin "
+          "mail lien tuc: giam workers, va dat maxbytespersecond de phien song "
+          "lau hon.",
+          family="fetch"),
+
     _rule(22, r"could not be fetched",
           "%(nguon)s tra ve rong (literal {0}) khi doc mot so mail. Day thuong "
           "la mail da hong san ben nguon, chay lai bao nhieu lan cung khong lay "
@@ -232,7 +252,8 @@ _COMMON_RULES = [
           "cuoi log: N nho thi hop thu coi nhu da xong. Tim tung mail do theo "
           "ngay o dong 'Err ...' roi xu ly tay, sau do danh dau hop thu la xong "
           "bang: touch state/<mailbox>/done.marker",
-          unless=r"exceeded command or bandwidth"),
+          unless=r"exceeded command or bandwidth",
+          family="fetch"),
 
     _rule(24, r"trycreate|can't create folder|create failed",
           "Khong tao duoc folder ben IceWarp. Thuong do ten folder trung voi "

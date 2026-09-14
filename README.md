@@ -1085,6 +1085,13 @@ Gmail:
 | `Bandwidth limit` / `[LIMIT]` | Vượt hạn mức IMAP; chờ reset rồi chạy lại |
 | `Too many simultaneous connections` | Quá 15 kết nối trên một account; giảm `workers` |
 | `[OVERQUOTA]` kèm `could not be fetched` | Là hạn mức **Gmail**, không phải server đích — xem mục hạn mức ở trên |
+| `could not be fetched: ... BAD Unknown command <id>` | **Phiên đọc chết giữa chừng, mail không hỏng.** Dấu hiệu: lỗi nằm liên tiếp trên những mail sát nhau, và cùng một mã phiên lặp ở mọi dòng `Err ...`. Chạy lại đúng lệnh đó; mail đã chép sang không bị chép lại. Hay gặp sau vài nghìn mail liên tục — giảm `workers`, đặt `maxbytespersecond` cho phiên sống lâu hơn |
+
+> Đừng lẫn hai kiểu `could not be fetched`. Có `BAD` trong câu là **phiên**
+> hỏng → chạy lại. Không có `BAD`, chỉ literal `{0}` rỗng rải rác → **mail**
+> hỏng sẵn ở nguồn, chạy lại bao nhiêu lần cũng vậy: xử lý tay từng cái rồi
+> `touch state/<mailbox>/done.marker`. Hai việc ngược nhau, đoán nhầm thì hoặc
+> vứt mail còn đọc được, hoặc chạy lại mãi một mail hỏng.
 
 Microsoft 365:
 

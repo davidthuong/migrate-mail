@@ -571,3 +571,67 @@ class TestSignalHints(unittest.TestCase):
     def test_log_binh_thuong_khong_dinh_luat_nay(self):
         tips = diagnose("msg INBOX/1 copied to INBOX/1\nDetected 0 errors\n")
         self.assertNotIn("tin hieu", " ".join(tips).lower())
+
+
+# Log that, Gmail lam nguon, ngay 11/09. Rut gon nhung giu nguyen hinh dang:
+# cac loi nam LIEN TIEP tren nhung mail sat nhau, va cung mot ma phien cua
+# Google lap lai o moi dong.
+GMAIL_PHIEN_CHET = """\
+Err 47/50: - msg [Gmail]/Th&AbA- &AREA4w- g&Hu0-i/524 {0} S[181062] F[] \
+I[27-Apr-2017 02:18:54 +0000] could not be fetched: 9358 BAD Unknown command \
+616947a28c9db-75127a4d1e8mb147495065b6c
+Err 48/50: - msg [Gmail]/Th&AbA- &AREA4w- g&Hu0-i/525 {0} S[1760] F[] \
+I[27-Apr-2017 02:40:54 +0000] could not be fetched: 9359 BAD Unknown command \
+616947a28c9db-75127a4d1e8mb147495065b6c
+Err 49/50: - msg [Gmail]/Th&AbA- &AREA4w- g&Hu0-i/526 {0} S[888794] F[] \
+I[27-Apr-2017 06:52:23 +0000] could not be fetched: 9360 BAD Unknown command \
+616947a28c9db-75127a4d1e8mb147495065b6c
+The most frequent error is ERR_Host1_FETCH.
+Exiting with return value 115 (EXIT_ERR_FETCH) 50/50 nb_errors/max_errors
+"""
+
+# Mail hong that: khong co BAD, chi la literal rong.
+MAIL_HONG_THAT = """\
+Err 1/50: - msg INBOX/9021 {0} S[4211] F[] I[03-Mar-2019 08:00:00 +0000] \
+could not be fetched: NO some error
+The sync is not strict, there are 1 among 16000 identified messages in host1.
+"""
+
+
+class TestFetchErrorTellsTheRightStory(unittest.TestCase):
+    """Doc khong duoc mail co hai nguyen nhan khac han nhau, va hai viec phai
+    lam nguoc nhau: mot ben la chay lai, mot ben la bo qua roi danh dau xong.
+    Doan nham thi hoac vut mail con doc duoc, hoac chay lai mai mot mail hong.
+    """
+
+    def test_phien_chet_thi_bao_chay_lai(self):
+        tips = diagnose(GMAIL_PHIEN_CHET, source="gmail")
+        joined = " ".join(tips).lower()
+        self.assertIn("chay lai", joined)
+        self.assertIn("phien", joined)
+
+    def test_phien_chet_khong_duoc_bao_danh_dau_xong(self):
+        """Loi nguy nhat: bao nguoi ta touch done.marker cho mot hop thu con
+        thieu 50 mail van con doc duoc."""
+        tips = diagnose(GMAIL_PHIEN_CHET, source="gmail")
+        self.assertNotIn("done.marker", " ".join(tips))
+
+    def test_mail_hong_that_van_giu_loi_khuyen_cu(self):
+        tips = diagnose(MAIL_HONG_THAT)
+        joined = " ".join(tips)
+        self.assertIn("done.marker", joined)
+        self.assertIn("identified messages", joined)
+
+    def test_chi_mot_goi_y_ve_doc_mail(self):
+        """Hai luat cung ho 'fetch' -- khong duoc hien ca hai, vi chung bao
+        lam hai viec nguoc nhau."""
+        tips = diagnose(GMAIL_PHIEN_CHET, source="gmail")
+        ve_fetch = [t for t in tips if "fetch" in t.lower() or "doc" in t.lower()
+                    or "phien" in t.lower()]
+        self.assertEqual(len(ve_fetch), 1, tips)
+
+    def test_bop_bang_thong_van_thang(self):
+        """Bi chan vi han muc thi do moi la cau tra loi, khong phai phien chet."""
+        text = GMAIL_PHIEN_CHET + "\nAccount exceeded command or bandwidth limits\n"
+        tips = diagnose(text, source="gmail")
+        self.assertIn("han muc", " ".join(tips).lower())
