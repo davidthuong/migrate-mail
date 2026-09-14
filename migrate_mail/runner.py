@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -34,6 +35,40 @@ MODE_SYNC = "sync"
 MODE_DRY = "dry"
 MODE_FOLDERS = "folders"
 MODE_SIZES = "sizes"
+
+# Cac tien trinh imapsync dang chay, de con dung duoc chung khi nguoi ta bam
+# Ctrl-C.
+#
+# Can cai nay vi mot SIGINT KHONG dung duoc imapsync: ngoai Docker, imapsync
+# gan INT cho catch_reconnect -- no noi lai hai dau roi CHEP TIEP. Phai hai
+# Ctrl-C trong 2 giay no moi thoat. Do la mac dinh cua imapsync, khong sua
+# duoc tu day, nen tool phai tu gui SIGTERM (imapsync gan TERM cho catch_exit)
+# thay vi ngoi cho.
+#
+# Do duoc tren rig: bam mot Ctrl-C, imapsync ghi "Got a signal INT ...
+# reconnected to both imap servers" roi chep tiep den het.
+_LIVE_PROCS: "set" = set()
+_LIVE_LOCK = threading.Lock()
+
+
+def stop_all(sig: int = signal.SIGTERM) -> int:
+    """Gui tin hieu cho moi imapsync dang chay. Tra ve so tien trinh da goi.
+
+    Khong cho, khong thu: ham nay hay duoc goi tu trong mot signal handler
+    nen phai ngan va khong duoc nem.
+    """
+    with _LIVE_LOCK:
+        procs = list(_LIVE_PROCS)
+    hit = 0
+    for proc in procs:
+        try:
+            if proc.poll() is None:
+                proc.send_signal(sig)
+                hit += 1
+        except Exception:       # tien trinh vua chet xong, hoac OS tu choi
+            pass
+    return hit
+
 
 # Cac dong thong ke o cuoi output imapsync
 _STAT_PATTERNS = {
@@ -358,14 +393,20 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 encoding="utf-8", errors="replace", bufsize=1,
             )
-            # `with proc` dam bao dong pipe va wait() ke ca khi co exception
-            with proc:
-                assert proc.stdout is not None
-                for line in proc.stdout:
-                    fh.write(line)
-                    chunks.append(line)
-                    if on_line:
-                        on_line(user, line.rstrip("\n"))
+            with _LIVE_LOCK:
+                _LIVE_PROCS.add(proc)
+            try:
+                # `with proc` dam bao dong pipe va wait() ke ca khi co exception
+                with proc:
+                    assert proc.stdout is not None
+                    for line in proc.stdout:
+                        fh.write(line)
+                        chunks.append(line)
+                        if on_line:
+                            on_line(user, line.rstrip("\n"))
+            finally:
+                with _LIVE_LOCK:
+                    _LIVE_PROCS.discard(proc)
             result.exit_code = proc.returncode
 
         parsed = parse_output("".join(chunks))

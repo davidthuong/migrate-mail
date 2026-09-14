@@ -737,6 +737,17 @@ python3 mm.py sync
 Chạy được, dừng được, chạy lại được. imapsync bỏ qua mail đã có bên đích nên
 chạy lại **không** nhân đôi dữ liệu. Nếu đứt giữa chừng, chạy lại đúng lệnh đó.
 
+**Ctrl-C dừng thật.** Màn hình hiện ngay `Dang dung... da bao N imapsync ket
+thuc`, và tiến trình tắt trong khoảng một giây. Lý do phải nói rõ: một mình
+Ctrl-C **không** đủ để dừng imapsync — ngoài Docker, imapsync hiểu `SIGINT` là
+*"kết nối lại"* rồi chép tiếp, phải hai lần trong 2 giây nó mới thoát. Nên tool
+tự hạ `SIGTERM` xuống thay vì ngồi đợi. Bấm lần nữa nếu muốn cắt phăng.
+
+Dừng giữa chừng là chuyện an toàn, đã đo trên rig: cắt ở 312/606 mail rồi chạy
+lại thì đúng 294 mail còn thiếu được chuyển, tổng khớp 606, **không mail nào
+nhân đôi**, `verify` lệch 0 ngày. Mật khẩu tạm trong `state/` cũng được xoá
+ngay cả khi bị cắt ngang.
+
 Dùng `screen` hoặc `tmux` — lần chạy đầu có thể kéo dài nhiều giờ:
 
 ```bash

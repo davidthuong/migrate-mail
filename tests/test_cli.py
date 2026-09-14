@@ -8,8 +8,10 @@ import io
 import json
 import os
 import shutil
+import signal
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -728,3 +730,133 @@ class TestSizesCommand(CliTestCase):
         with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync", "--sizes", "--only", "an@cu.com")
         self.assertFalse((self.tmp / "state" / "an@cu.com" / "done.marker").exists())
+
+
+class TestOnlyAcceptsBothSpellings(CliTestCase):
+    """--only phai nhan ca dau phay lan lap co.
+
+    Truoc day --only la mot chuoi don, nen `--only a --only b` bi argparse
+    lang le giu moi cai cuoi: chi mot mailbox duoc chuyen, con dong tong ket
+    van bao "1/1 mailbox OK". Voi mot cong cu migrate thi do la kieu hong
+    nguy nhat -- khong co dau hieu nao de nhin ra.
+    """
+
+    def users_run(self, out):
+        """Cac dia chi nguon that su da chay, doc tu bang ket qua."""
+        return sorted(u for u in ("an@cu.com", "binh@cu.com") if u in out)
+
+    def test_dau_phay(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            _code, out = self.run_cli("sync", "--only", "an@cu.com,binh@cu.com")
+        self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
+
+    def test_lap_co(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            _code, out = self.run_cli("sync", "--only", "an@cu.com",
+                                      "--only", "binh@cu.com")
+        self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
+
+    def test_tron_hai_kieu(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            _code, out = self.run_cli("sync", "--only", "an@cu.com,binh@cu.com",
+                                      "--only", "an@cu.com")
+        self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
+
+    def test_khong_khai_thi_chay_het(self):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+            _code, out = self.run_cli("sync")
+        self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
+
+    def test_normalize_only(self):
+        self.assertEqual([], cli.normalize_only(None))
+        self.assertEqual([], cli.normalize_only(""))
+        self.assertEqual(["a@x.vn"], cli.normalize_only("a@x.vn"))
+        self.assertEqual(["a@x.vn", "b@x.vn"], cli.normalize_only("a@x.vn,b@x.vn"))
+        self.assertEqual(["a@x.vn", "b@x.vn"],
+                         cli.normalize_only(["a@x.vn", "b@x.vn"]))
+        self.assertEqual(["a@x.vn", "b@x.vn", "c@x.vn"],
+                         cli.normalize_only(["a@x.vn,b@x.vn", " c@x.vn "]))
+        # web UI dua thang mot list vao, khong qua argparse
+        self.assertEqual(["a@x.vn"], cli.normalize_only(["a@x.vn", "", "  "]))
+
+    def test_only_co_mo_ta_trong_help(self):
+        """Truoc day chi 'preflight --help' noi ve dau phay; sync thi trong
+        tron, nen nguoi doc help khong the doan ra cach viet dung."""
+        for command in ("sync", "preflight", "discover", "verify"):
+            buf = io.StringIO()
+            with redirect_stdout(buf), self.assertRaises(SystemExit):
+                cli.main([command, "--help"])
+            self.assertIn("dau phay", buf.getvalue(),
+                          "%s --help khong noi cach viet --only" % command)
+
+
+class TestCtrlCStopsTheRun(unittest.TestCase):
+    """Ctrl-C phai dung that, va phai noi ngay la no dang dung.
+
+    Vi sao can: mot SIGINT khong dung duoc imapsync -- ngoai Docker no gan INT
+    cho catch_reconnect, noi lai hai dau roi chep tiep. Cung luc do
+    KeyboardInterrupt o luong chinh mac ket trong ThreadPoolExecutor.__exit__
+    (shutdown cho luong tho doc het stdout). Ket qua do tren rig that: bam
+    Ctrl-C, MAN HINH KHONG HIEN GI, mail van chay sang dich them ca phut.
+    """
+
+    def setUp(self):
+        self.previous = signal.getsignal(signal.SIGINT)
+        self.addCleanup(signal.signal, signal.SIGINT, self.previous)
+
+    def test_tra_lai_handler_cu_khi_ra_khoi_khoi(self):
+        with cli._stop_on_interrupt():
+            self.assertIsNot(signal.getsignal(signal.SIGINT), self.previous)
+        self.assertIs(signal.getsignal(signal.SIGINT), self.previous)
+
+    def test_tra_lai_handler_cu_ke_ca_khi_co_loi(self):
+        with self.assertRaises(ValueError):
+            with cli._stop_on_interrupt():
+                raise ValueError("hong giua chung")
+        self.assertIs(signal.getsignal(signal.SIGINT), self.previous)
+
+    def test_lan_dau_ha_sigterm_va_noi_ra_man_hinh(self):
+        buf = io.StringIO()
+        with mock.patch("migrate_mail.runner.stop_all", return_value=2) as stop:
+            with redirect_stdout(buf), cli._stop_on_interrupt():
+                handler = signal.getsignal(signal.SIGINT)
+                with self.assertRaises(KeyboardInterrupt):
+                    handler(signal.SIGINT, None)
+        stop.assert_called_once_with(signal.SIGTERM)
+        out = buf.getvalue()
+        self.assertIn("Dang dung", out)
+        self.assertIn("2 imapsync", out)
+        # Phai chi duong ra, vi lan dau chua chac cat duoc ngay
+        self.assertIn("Ctrl-C lan nua", out)
+
+    def test_lan_hai_cat_phang(self):
+        buf = io.StringIO()
+        hard = getattr(signal, "SIGKILL", signal.SIGTERM)
+        with mock.patch("migrate_mail.runner.stop_all", return_value=1) as stop:
+            with redirect_stdout(buf), cli._stop_on_interrupt():
+                handler = signal.getsignal(signal.SIGINT)
+                for _ in range(2):
+                    with self.assertRaises(KeyboardInterrupt):
+                        handler(signal.SIGINT, None)
+        self.assertEqual([mock.call(signal.SIGTERM), mock.call(hard)],
+                         stop.call_args_list)
+        self.assertIn("Cat ngay", buf.getvalue())
+
+    def test_khong_cai_o_luong_phu(self):
+        """web UI goi cmd_sync tu luong cua request; signal.signal o do nem
+        ValueError va se giet ca job."""
+        seen = {}
+
+        def run():
+            try:
+                with cli._stop_on_interrupt():
+                    seen["handler"] = signal.getsignal(signal.SIGINT)
+                seen["ok"] = True
+            except Exception as exc:      # pragma: no cover
+                seen["loi"] = exc
+
+        t = threading.Thread(target=run)
+        t.start()
+        t.join(5)
+        self.assertTrue(seen.get("ok"), seen.get("loi"))
+        self.assertIs(seen["handler"], self.previous)

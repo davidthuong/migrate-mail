@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures as futures
 import os
+import signal
 import sys
 from contextlib import contextmanager
 import threading
@@ -13,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, mailboxes, providers, report, verify
+from . import __version__, mailboxes, providers, report, runner, verify
 from .config import (FOLDER_KEYS, MASTER_AUTHZID, MASTER_SEPARATOR, Config,
                      load_config)
 from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
@@ -630,6 +631,54 @@ def _done_marker(cfg: Config, user: User) -> Path:
     return user_statedir(cfg, user) / "done.marker"
 
 
+@contextmanager
+def _stop_on_interrupt():
+    """Bien Ctrl-C thanh mot lenh dung that su.
+
+    Khong co khoi nay thi Ctrl-C dau tien khong lam duoc gi CA, va man hinh
+    cung khong hien mot chu nao:
+
+    - imapsync (ngoai Docker) gan INT cho catch_reconnect. No noi lai hai dau
+      roi chep tiep. Mail van chay sang dich.
+    - KeyboardInterrupt o luong chinh thoat ra khoi pool.map roi mac ket ngay
+      trong ThreadPoolExecutor.__exit__ -> shutdown(wait=True), doi luong tho
+      doc het stdout cua imapsync. Ma imapsync thi vua noi lai xong.
+
+    Ket qua: nguoi ta bam Ctrl-C, khong thay gi, tuong tool treo -- trong khi
+    no van dang ghi vao hop thu cua khach. Nen o day tu gui SIGTERM (imapsync
+    gan TERM cho catch_exit) truoc khi de KeyboardInterrupt bay tiep.
+
+    Khong cai o luong phu: signal.signal chi chay duoc o luong chinh, va web
+    UI goi cmd_sync tu luong cua request.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    hard = getattr(signal, "SIGKILL", signal.SIGTERM)
+    count = {"n": 0}
+
+    def handler(signum, frame):
+        count["n"] += 1
+        # In thang, KHONG qua say(): say() giu _print_lock, ma handler chay
+        # ngay tren luong chinh -- gap luc chinh luong do dang giu lock thi
+        # treo cung nhau.
+        if count["n"] == 1:
+            n = runner.stop_all(signal.SIGTERM)
+            print("\nDang dung... da bao %d imapsync ket thuc. "
+                  "Ctrl-C lan nua de cat ngay." % n, flush=True)
+        else:
+            runner.stop_all(hard)
+            print("\nCat ngay.", flush=True)
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGINT, handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
 def cmd_sync(args, cfg: Config) -> int:
     users = filter_users(_users(args, cfg), args.only)
     if args.sizes:
@@ -733,7 +782,8 @@ def cmd_sync(args, cfg: Config) -> int:
         return r
 
     try:
-        with futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        with _stop_on_interrupt(), \
+                futures.ThreadPoolExecutor(max_workers=workers) as pool:
             for r in pool.map(work, todo):
                 results.append(r)
     except KeyboardInterrupt:
@@ -1088,6 +1138,41 @@ def cmd_web(args, cfg: Config) -> int:
 
 # --------------------------------------------------------------------------- #
 
+def _add_only(sub) -> None:
+    """Them --only cho mot lenh con.
+
+    action="append" chu khong phai mot chuoi don: viet `--only a --only b` la
+    phan xa tu nhien, va voi mot chuoi don thi argparse LANG LE giu moi cai
+    cuoi -- `sync --only an --only binh` chi chay binh, roi bao "1/1 mailbox
+    OK" nhu the da chay du. Voi mot cong cu migrate thi kieu im lang do la
+    kieu te nhat: nguoi ta doc dong tong ket, thay OK, va di ngu.
+
+    Ca hai loi viet deu nhan, normalize_only() o main() tach dau phay sau.
+    """
+    sub.add_argument("--only", action="append", default=None, metavar="DIA_CHI",
+                     help="chi chay vai dia chi: cach nhau bang dau phay, "
+                          "hoac lap lai --only")
+
+
+def normalize_only(value) -> List[str]:
+    """--only ve mot danh sach dia chi, du nguoi ta viet kieu nao.
+
+    Nhan: None, "a@x.com", "a@x.com,b@x.com", ["a@x.com,b@x.com", "c@x.com"].
+    Web UI dua thang vao mot list nen ham nay phai chiu duoc ca list san.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    out = []
+    for part in value:
+        for piece in str(part).split(","):
+            piece = piece.strip()
+            if piece:
+                out.append(piece)
+    return out
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="mm",
@@ -1138,17 +1223,17 @@ def build_parser() -> argparse.ArgumentParser:
     mk.set_defaults(func=cmd_mkusers)
 
     pf = sub.add_parser("preflight", help="thu dang nhap ca hai dau cho tung mailbox")
-    pf.add_argument("--only", default="", help="chi chay vai dia chi, cach nhau bang dau phay")
+    _add_only(pf)
     pf.set_defaults(func=cmd_preflight)
 
     dc = sub.add_parser("discover", help="xem folder ben nguon va ke hoach chuyen doi")
-    dc.add_argument("--only", default="")
+    _add_only(dc)
     dc.add_argument("--dest", action="store_true",
                     help="liet ke folder co san ben dich thay vi ben nguon")
     dc.set_defaults(func=cmd_discover)
 
     s = sub.add_parser("sync", help="chay migration")
-    s.add_argument("--only", default="")
+    _add_only(s)
     s.add_argument("--dry", action="store_true", help="chay thu, khong ghi gi vao dich")
     s.add_argument("--sizes", action="store_true",
                    help="chi dem dung luong ben nguon va uoc luong so ngay can chay")
@@ -1163,7 +1248,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_sync)
 
     v = sub.add_parser("verify", help="doi chieu ngay thang cua mail giua hai dau")
-    v.add_argument("--only", default="")
+    _add_only(v)
     v.add_argument("--sample", type=int, default=200,
                    help="so mail lay mau moi folder (mac dinh 200, 0 = lay het)")
     v.set_defaults(func=cmd_verify)
@@ -1194,8 +1279,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.print_help()
         return 2
 
-    if isinstance(getattr(args, "only", None), str):
-        args.only = [s for s in args.only.split(",") if s.strip()]
+    if hasattr(args, "only"):
+        args.only = normalize_only(args.only)
 
     cfg = None
     if getattr(args, "needs_config", True):

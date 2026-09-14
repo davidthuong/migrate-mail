@@ -2,6 +2,8 @@
 """Test dung lenh imapsync va doc output cua no."""
 
 import os
+import shutil
+import signal
 import sys
 import tempfile
 import unittest
@@ -9,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import providers
+from migrate_mail import providers, runner
 from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config,
                                  MasterConf, Paths, ServerConf, SyncConf)
 from migrate_mail.discover import _parse_list_line, build_plan
@@ -544,3 +546,76 @@ class TestDaysNeeded(unittest.TestCase):
         khong co nghia gi va phai bien mat chu khong duoc doan bua."""
         self.assertEqual(providers.M365.daily_limit, 0)
         self.assertEqual(self.days(50 * 1024 ** 3, providers.M365.daily_limit), 0)
+
+
+class TestStopAll(unittest.TestCase):
+    """runner.stop_all() phai voi toi duoc imapsync dang chay.
+
+    Ly do co ham nay: MOT SIGINT khong dung duoc imapsync. Ngoai Docker no gan
+    INT cho catch_reconnect -- noi lai hai dau roi chep tiep (do that tren rig:
+    "Got a signal INT ... reconnected to both imap servers"). TERM thi moi vao
+    catch_exit. Nen Ctrl-C o tool phai tu ha TERM xuong, khong ngoi cho.
+    """
+
+    def setUp(self):
+        runner._LIVE_PROCS.clear()
+        self.addCleanup(runner._LIVE_PROCS.clear)
+
+    class FakeProc:
+        def __init__(self, alive=True):
+            self.alive = alive
+            self.signals = []
+
+        def poll(self):
+            return None if self.alive else 0
+
+        def send_signal(self, sig):
+            self.signals.append(sig)
+
+    def test_khong_co_gi_chay_thi_tra_ve_0(self):
+        self.assertEqual(0, runner.stop_all())
+
+    def test_bao_cho_moi_tien_trinh_con_song(self):
+        a, b = self.FakeProc(), self.FakeProc()
+        runner._LIVE_PROCS.update({a, b})
+        self.assertEqual(2, runner.stop_all(signal.SIGTERM))
+        self.assertEqual([signal.SIGTERM], a.signals)
+        self.assertEqual([signal.SIGTERM], b.signals)
+
+    def test_bo_qua_tien_trinh_da_chet(self):
+        dead, alive = self.FakeProc(alive=False), self.FakeProc()
+        runner._LIVE_PROCS.update({dead, alive})
+        self.assertEqual(1, runner.stop_all())
+        self.assertEqual([], dead.signals)
+
+    def test_tien_trinh_nem_loi_khong_lam_hong_ca_lo(self):
+        """Chay tu trong signal handler: nem ra la mat luon duong dung."""
+        class Angry(self.FakeProc):
+            def send_signal(self, sig):
+                raise OSError("da bien mat")
+
+        angry, ok = Angry(), self.FakeProc()
+        runner._LIVE_PROCS.update({angry, ok})
+        runner.stop_all()
+        self.assertEqual([signal.SIGTERM], ok.signals)
+
+    def test_so_dang_ky_rong_sau_khi_chay_xong(self):
+        """run_user phai go tien trinh ra khoi so khi chay xong.
+
+        Neu quen go, lan Ctrl-C sau se gui tin hieu vao mot PID da chet -- ma
+        PID thi duoc cap lai, nen co ngay ban nham tien trinh khac.
+        """
+        tmp = Path(tempfile.mkdtemp(prefix="mmtest-stopall-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        fake = Path(__file__).resolve().parent / "fake_imapsync.py"
+        cfg = make_cfg()
+        cfg.paths.imapsync = "%s %s" % (sys.executable, fake)
+        cfg.paths.logdir = tmp / "logs"
+        cfg.paths.statedir = tmp / "state"
+        cfg.paths.logdir.mkdir(parents=True, exist_ok=True)
+
+        plan = build_plan(parse(GMAIL_EN), cfg.sync)
+        result = runner.run_user(cfg, USER, plan, MODE_SYNC)
+
+        self.assertEqual(set(), runner._LIVE_PROCS)
+        self.assertEqual(0, result.exit_code)
