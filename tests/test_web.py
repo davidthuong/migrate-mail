@@ -769,3 +769,116 @@ class TestPageStructure(unittest.TestCase):
             text = line[0]
             self.assertTrue("nguồn" in text or "đích" in text,
                             "%s khong noi nguon hay dich: %s" % (label, text))
+
+
+class TestPreflightShowsInTheTable(WebTestCase):
+    """Bam "Kiem tra dang nhap" xong thi tung dong phai noi duoc ket qua.
+
+    Truoc day bang chi doc tu state/runs/*.json, ma chi ho lenh sync moi ghi
+    file do -- nen sau mot lan preflight, ca ba dong van ghi "chua chay", ke ca
+    dong vua dang nhap hong. Voi 200 mailbox va 15 cai sai mat khau thi cho duy
+    nhat biet la cuon mot tuong chu trong khung log.
+    """
+
+    def _save(self, **users):
+        from migrate_mail.report import save_preflight
+        statedir = self.tmp / "state"
+        save_preflight(statedir, [
+            (name, ok_src, msg_src, ok_dst, msg_dst)
+            for name, (ok_src, msg_src, ok_dst, msg_dst) in users.items()])
+
+    def row(self, src_user):
+        rows = [m for m in self.state()["mailboxes"] if m["src_user"] == src_user]
+        self.assertEqual(len(rows), 1)
+        return rows[0]
+
+    def test_chua_kiem_thi_khong_co_gi(self):
+        self.assertIsNone(self.row("an@cu.com")["preflight"])
+
+    def test_dang_nhap_duoc(self):
+        self._save(**{"an@cu.com": (True, "", True, "")})
+        pf = self.row("an@cu.com")["preflight"]
+        self.assertTrue(pf["ok"])
+        self.assertEqual(pf["hong"], [])
+        self.assertTrue(pf["when"])
+
+    def test_noi_ro_hong_o_dau(self):
+        self._save(**{"an@cu.com": (True, "", False,
+                                    "[AUTHENTICATIONFAILED] Authentication failed.")})
+        pf = self.row("an@cu.com")["preflight"]
+        self.assertFalse(pf["ok"])
+        self.assertEqual(pf["hong"], ["dich"])
+        self.assertIn("Authentication failed", pf["loi"])
+
+    def test_hong_ca_hai_dau(self):
+        self._save(**{"an@cu.com": (False, "loi nguon", False, "loi dich")})
+        self.assertEqual(self.row("an@cu.com")["preflight"]["hong"], ["nguon", "dich"])
+
+    def test_kem_goi_y_sua_loi(self):
+        self._save(**{"an@cu.com": (True, "", False,
+                                    "[AUTHENTICATIONFAILED] Invalid credentials")})
+        tips = self.row("an@cu.com")["preflight"]["goi_y"]
+        self.assertTrue(tips)
+        self.assertTrue(all(t.startswith("dich: ") for t in tips), tips)
+
+    def test_chi_kiem_mot_hop_thi_hop_khac_van_con_ket_qua_cu(self):
+        """preflight --only mot-dia-chi khong duoc xoa ket qua cua 199 hop kia."""
+        self._save(**{"an@cu.com": (True, "", True, ""),
+                      "binh@cu.com": (True, "", True, "")})
+        self._save(**{"an@cu.com": (False, "hong roi", True, "")})
+        self.assertFalse(self.row("an@cu.com")["preflight"]["ok"])
+        self.assertTrue(self.row("binh@cu.com")["preflight"]["ok"])
+
+    def test_file_hong_thi_coi_nhu_chua_kiem(self):
+        (self.tmp / "state").mkdir(parents=True, exist_ok=True)
+        (self.tmp / "state" / "preflight.json").write_text("{khong phai json",
+                                                           encoding="utf-8")
+        self.assertIsNone(self.row("an@cu.com")["preflight"])
+
+
+class TestPreflightBadgeRules(unittest.TestCase):
+    """Quy tac hien cot KET QUA, doc thang tu trang."""
+
+    def setUp(self):
+        from migrate_mail.web_ui import PAGE
+        self.badge = PAGE[PAGE.index("function badge("):]
+        self.badge = self.badge[:self.badge.index("\n}")]
+
+    def test_ket_qua_sync_thang_preflight(self):
+        """Sync da chay thi no moi la viec that su da lam; preflight chi lap
+        cho khi chua co gi."""
+        self.assertLess(self.badge.index('m.ket_qua === "OK"'),
+                        self.badge.index("m.preflight"))
+        self.assertLess(self.badge.index('m.ket_qua === "LOI"'),
+                        self.badge.index("m.preflight"))
+
+    def test_con_chua_chay_cho_hop_chua_kiem_gi(self):
+        self.assertIn("chưa chạy", self.badge)
+        self.assertGreater(self.badge.rindex("chưa chạy"),
+                           self.badge.index("m.preflight"))
+
+
+class TestSideNamesAreAccented(unittest.TestCase):
+    """Ma nguon Python trong repo viet khong dau, con trang thi co dau.
+
+    Ghep ten dau o phia may chu thi "dich" khong dau loi thang ra giao dien,
+    nam canh "dang nhap hong o" co dau. Doi o lop giao dien.
+    """
+
+    def test_may_chu_tra_ve_danh_sach_chu_khong_ghep_san(self):
+        from migrate_mail.web import _preflight_row
+        from migrate_mail.config import load_config
+        import tempfile as tf
+        tmp = Path(tf.mkdtemp(prefix="mmside-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        (tmp / "config.ini").write_text(CONFIG.format(imapsync="imapsync"),
+                                        encoding="utf-8")
+        cfg = load_config(tmp / "config.ini")
+        row = _preflight_row({"src_ok": False, "dst_ok": False,
+                              "src_msg": "a", "dst_msg": "b"}, cfg)
+        self.assertEqual(row["hong"], ["nguon", "dich"])
+
+    def test_trang_doi_sang_co_dau(self):
+        from migrate_mail.web_ui import PAGE
+        self.assertIn('nguon: "nguồn"', PAGE)
+        self.assertIn('dich: "đích"', PAGE)

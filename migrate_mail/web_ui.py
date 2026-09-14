@@ -205,6 +205,15 @@ function renderScope() {
 function badge(m) {
   if (m.ket_qua === "OK")  return '<span class="badge b-ok">OK</span>';
   if (m.ket_qua === "LOI") return '<span class="badge b-err">LỖI</span>';
+  // Chua chay sync, nhung co the da kiem dang nhap. Noi ra thay vi de "chua
+  // chay": voi 200 mailbox thi cot nay la cho duy nhat nhin mot phat ra 15
+  // hop sai mat khau, khong ai di cuon log tim.
+  // Ket qua sync co roi thi no thang -- no moi la viec that su da lam.
+  const p = m.preflight;
+  if (p) {
+    return p.ok ? '<span class="badge b-ok">đăng nhập OK</span>'
+                : '<span class="badge b-err">đăng nhập LỖI</span>';
+  }
   return '<span class="badge b-idle">chưa chạy</span>';
 }
 
@@ -217,7 +226,7 @@ function renderRows() {
   }
   box.innerHTML = state.mailboxes.map((m) => {
     // Goi y day du nam o card "Can xu ly"; trong bang chi de mot dau chi cho.
-    const more = (m.goi_y || []).length
+    const more = fixTips(m).length
       ? ' <span class="more">↓ cần xử lý</span>' : "";
     const warn = (!m.has_src_password || !m.has_dst_password)
       ? ' <span class="badge b-err">thiếu mật khẩu</span>' : "";
@@ -250,16 +259,35 @@ function renderRows() {
 
 // Mailbox nao co goi_y thi gom ca vao day, kem dong loi ngan de biet loi
 // nao ung voi loi khuyen nao. Khong co mailbox nao loi thi an luon card.
+function fixTips(m) {
+  // Preflight hong thi lan sync sau CHAC CHAN hong, nen no phai len day ke ca
+  // khi lan sync truoc da OK -- do la canh bao som, khong phai tin cu.
+  const pf = (m.preflight && !m.preflight.ok) ? m.preflight.goi_y || [] : [];
+  return pf.concat(m.goi_y || []);
+}
+
+// Ten dau viet co dau cho khop voi phan con lai cua trang; may chu tra ve
+// "nguon"/"dich" khong dau vi ma nguon Python trong repo viet vay.
+const SIDE_VI = { nguon: "nguồn", dich: "đích" };
+
+function fixLabel(m) {
+  if (m.preflight && !m.preflight.ok) {
+    const sides = (m.preflight.hong || []).map((s) => SIDE_VI[s] || s);
+    return "đăng nhập hỏng ở " + sides.join(" và ");
+  }
+  return m.ghi_chu;
+}
+
 function renderFix() {
-  const bad = state.mailboxes.filter((m) => (m.goi_y || []).length);
+  const bad = state.mailboxes.filter((m) => fixTips(m).length);
   $("fix").hidden = !bad.length;
   if (!bad.length) return;
   $("fixcount").textContent = "(" + bad.length + " mailbox)";
   $("fixlist").innerHTML = bad.map((m) =>
     '<div class="fix"><div class="who"><b>' + esc(m.src_user) + "</b>" +
-    (m.ghi_chu ? '<span class="badge b-err">' + esc(m.ghi_chu) + "</span>" : "") +
+    (fixLabel(m) ? '<span class="badge b-err">' + esc(fixLabel(m)) + "</span>" : "") +
     "</div>" +
-    m.goi_y.map((t) => "<p>" + esc(t) + "</p>").join("") +
+    fixTips(m).map((t) => "<p>" + esc(t) + "</p>").join("") +
     "</div>").join("");
 }
 

@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Optional
 
 from . import __version__, cli, report
 from .config import Config, load_config
+from .hints import diagnose
 from . import users as users_module
 from .users import User, load_users
 from .web_ui import PAGE
@@ -205,9 +206,11 @@ def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
         return []
     latest = _latest_rows(cfg)
     done_dir = Path(cfg.paths.statedir)
+    preflight = report.load_preflight(done_dir)
     rows = []
     for u in users:
         row = latest.get(u.src_user, {})
+        pf = preflight.get(u.src_user) or {}
         rows.append({
             "src_user": u.src_user,
             "dst_user": u.dst_user,
@@ -231,8 +234,37 @@ def _mailboxes(cfg: Config, users_path: Path) -> List[Dict]:
             "goi_y": report.hints_for_row(row) if row else [],
             "mode": row.get("mode", ""),
             "run": row.get("run", ""),
+            # Preflight: None neu chua kiem bao gio. Ghi ro hong o DAU nao --
+            # "nguon hay dich" la cau dau tien phai tra loi, va imapsync lan
+            # tool deu phan biet duoc nen dashboard khong duoc lam mo di.
+            "preflight": _preflight_row(pf, cfg) if pf else None,
         })
     return rows
+
+
+def _preflight_row(pf: Dict, cfg: Config) -> Dict:
+    """Mot lan preflight cua mot mailbox, gon lai cho trinh duyet."""
+    sides = []
+    if not pf.get("src_ok"):
+        sides.append(("nguon", cfg.source.provider.name, pf.get("src_msg", "")))
+    if not pf.get("dst_ok"):
+        sides.append(("dich", cfg.dest.provider.name, pf.get("dst_msg", "")))
+    tips = []
+    for side, _name, msg in sides:
+        for tip in diagnose(msg, limit=2, source=cfg.source.provider.key,
+                            dest=cfg.dest.provider.key):
+            tips.append("%s: %s" % (side, tip))
+    return {
+        "ok": not sides,
+        "when": pf.get("when", ""),
+        # Danh sach chu khong phai chuoi da ghep: ma nguon Python trong repo
+        # viet khong dau, con trang thi co dau. Ghep o day thi "dich" khong dau
+        # loi thang ra giao dien. De trinh duyet tu doi sang "nguon"/"dich" co
+        # dau.
+        "hong": [side for side, _n, _m in sides],
+        "loi": " | ".join("%s: %s" % (side, msg) for side, _n, msg in sides if msg),
+        "goi_y": tips,
+    }
 
 
 # --------------------------------------------------------------------------- #

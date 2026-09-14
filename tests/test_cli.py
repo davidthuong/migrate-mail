@@ -922,3 +922,57 @@ class TestVerifyReportsUncheckableMail(CliTestCase):
         files = list((self.tmp / "logs").glob("verify-*.txt"))
         self.assertEqual(len(files), 1)
         self.assertIn("khong kiem duoc", files[0].read_text(encoding="utf-8"))
+
+
+class TestPreflightSavesItsResult(CliTestCase):
+    """preflight phai luu lai ket qua, khong chi in ra man hinh.
+
+    Dashboard doc file nay de danh dau tung dong. Khong co no thi bang van ghi
+    "chua chay" cho ca nhung mailbox vua dang nhap hong.
+    """
+
+    def preflight(self, *args):
+        def fake_check(cfg, user, side, timeout=60):
+            if side == "dest" and user.dst_user.startswith("chi@"):
+                return False, "[AUTHENTICATIONFAILED] Authentication failed."
+            return True, ""
+        with mock.patch("migrate_mail.cli.check_login", side_effect=fake_check):
+            return self.run_cli("preflight", *args)
+
+    def saved(self):
+        from migrate_mail.report import load_preflight
+        return load_preflight(self.tmp / "state")
+
+    def test_ghi_ket_qua_cho_tung_mailbox(self):
+        code, out = self.preflight()
+        self.assertEqual(code, 1, out)          # co 1 hop hong co y
+        saved = self.saved()
+        self.assertEqual(sorted(saved), ["an@cu.com", "binh@cu.com", "fail.chi@cu.com"])
+        self.assertTrue(saved["an@cu.com"]["src_ok"])
+        self.assertTrue(saved["an@cu.com"]["dst_ok"])
+
+    def test_giu_ca_cau_bao_loi_cua_server(self):
+        self.preflight()
+        row = self.saved()["fail.chi@cu.com"]
+        self.assertFalse(row["dst_ok"])
+        self.assertIn("Authentication failed", row["dst_msg"])
+        self.assertTrue(row["src_ok"])
+
+    def test_co_dau_thoi_gian(self):
+        self.preflight()
+        self.assertTrue(self.saved()["an@cu.com"]["when"])
+
+    def test_chay_only_khong_xoa_ket_qua_cu(self):
+        self.preflight()
+        self.preflight("--only", "an@cu.com")
+        self.assertEqual(sorted(self.saved()),
+                         ["an@cu.com", "binh@cu.com", "fail.chi@cu.com"])
+
+    def test_khong_ghi_duoc_thi_van_chay_tiep(self):
+        """Mat file luu la chuyen nho; dung ca preflight moi la chuyen to."""
+        with mock.patch("migrate_mail.report.save_preflight",
+                        side_effect=OSError("dia day")):
+            code, out = self.preflight()
+        self.assertEqual(code, 1)
+        self.assertIn("Ket qua:", out)
+        self.assertIn("khong luu duoc", out)

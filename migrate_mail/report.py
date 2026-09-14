@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import os
 import textwrap
 import time
 from pathlib import Path
@@ -214,6 +215,47 @@ def latest_rows(runs_dir) -> Dict[str, Row]:
         except (OSError, ValueError):
             continue
     return out
+
+
+PREFLIGHT_FILE = "preflight.json"
+
+
+def save_preflight(statedir, results) -> Path:
+    """Ghi ket qua preflight cua tung mailbox vao state/preflight.json.
+
+    GOP chu khong de len: `preflight --only mot-dia-chi` chi kiem mot hop thu,
+    ma ghi de thi ket qua cua 199 hop con lai bien mat khoi dashboard trong khi
+    khong ai kiem lai chung ca.
+
+    results: lap cua (src_user, src_ok, src_msg, dst_ok, dst_msg).
+    """
+    path = Path(statedir) / PREFLIGHT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    users = load_preflight(statedir)
+    when = time.strftime("%Y-%m-%d %H:%M:%S")
+    for src_user, src_ok, src_msg, dst_ok, dst_msg in results:
+        users[src_user] = {
+            "src_ok": bool(src_ok), "dst_ok": bool(dst_ok),
+            "src_msg": src_msg or "", "dst_msg": dst_msg or "",
+            "when": when,
+        }
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"users": users}, fh, ensure_ascii=False, indent=2)
+    os.replace(str(tmp), str(path))
+    return path
+
+
+def load_preflight(statedir) -> Dict[str, Row]:
+    """Ket qua preflight da luu, khoa theo dia chi nguon. {} neu chua co."""
+    path = Path(statedir) / PREFLIGHT_FILE
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    users = data.get("users")
+    return users if isinstance(users, dict) else {}
 
 
 def _float(row: Row, key: str) -> float:

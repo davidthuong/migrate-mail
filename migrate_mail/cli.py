@@ -406,6 +406,17 @@ def cmd_preflight(args, cfg: Config) -> int:
             if not dst[0]:
                 say("       dich : %s" % dst[1])
 
+    # Luu lai de dashboard danh dau duoc tung dong. Truoc day preflight chi in
+    # ra man hinh, nen bang tren dashboard van ghi "chua chay" cho ca nhung
+    # mailbox vua dang nhap hong -- voi 200 hop thu thi phai cuon mot tuong
+    # chu moi biet 15 cai nao sai mat khau.
+    try:
+        report.save_preflight(
+            Path(cfg.paths.statedir),
+            [(u.src_user, s[0], s[1], d[0], d[1]) for u, s, d in results])
+    except OSError as exc:
+        say("(khong luu duoc ket qua preflight: %s)" % exc)
+
     bad = [r for r in results if not (r[1][0] and r[2][0])]
     say("")
     say("Ket qua: %d/%d mailbox dang nhap duoc ca hai dau." % (len(results) - len(bad), len(results)))
