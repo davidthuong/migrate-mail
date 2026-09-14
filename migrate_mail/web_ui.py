@@ -164,6 +164,13 @@ PAGE = r"""<!doctype html>
            <input name="dst_password" type="password" required></div>
       <div><button type="submit" class="primary">Thêm vào danh sách</button></div>
     </form>
+    <!-- Chỗ báo kết quả thêm mailbox phải là một thẻ RIÊNG, không được viết
+         đè lên khối ghi chú: khối đó chứa <code id="usersfile">, mà gán
+         textContent lên cha thì xoá sạch con. Sau đó refresh() chạm vào
+         $("usersfile") đã biến mất, ném lỗi trước khi kịp gọi schedule(),
+         và cả vòng cập nhật chết hẳn -- dashboard đứng hình không một lời
+         báo cho tới khi tải lại trang. -->
+    <div class="note" id="addstatus"></div>
     <div class="note" id="addnote">
       Ghi thẳng vào <code id="usersfile">users.csv</code> trên máy chủ này.
       Mật khẩu không bao giờ được gửi ngược về trình duyệt.
@@ -175,6 +182,8 @@ PAGE = r"""<!doctype html>
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
+// Dat chu vao mot o, bo qua neu o do khong con. Xem ghi chu trong refresh().
+const text = (id, value) => { const el = $(id); if (el) el.textContent = value; };
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
   (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -311,13 +320,22 @@ async function refresh() {
     $("jobinfo").innerHTML = '<span class="err">Mất kết nối tới máy chủ</span>';
     return schedule();
   }
-  $("src").textContent = state.source_provider + " · " + state.source;
-  $("dst").textContent = state.dest_provider + " · " + state.dest;
-  $("meta").textContent = "config: " + state.config +
-    " · song song: " + state.workers + " mailbox";
-  $("usersfile").textContent = state.users_file;
-  renderLabels();
-  renderRows(); renderFix(); renderScope(); renderJob(); schedule();
+  // schedule() phai chay DU phia tren co hong. Truoc day mot phan tu thieu
+  // nem TypeError ngay tai day, va vi schedule() nam sau cung nen vong cap
+  // nhat chet han: dashboard dung hinh, khong mot loi bao, cho toi khi tai
+  // lai trang. Mot o hien sai con hon ca man hinh dong bang.
+  try {
+    text("src", state.source_provider + " · " + state.source);
+    text("dst", state.dest_provider + " · " + state.dest);
+    text("meta", "config: " + state.config +
+                 " · song song: " + state.workers + " mailbox");
+    text("usersfile", state.users_file);
+    renderLabels();
+    renderRows(); renderFix(); renderScope(); renderJob();
+  } catch (e) {
+    console.error("refresh hong:", e);
+  }
+  schedule();
 }
 
 // Nhan trong giao dien lay tu config chu khong viet cung: mot ban cai chay
@@ -333,15 +351,20 @@ function passField(id, needed) {
 function renderLabels() {
   const src = state.source_provider, dst = state.dest_provider;
   $("btn-dest").textContent = "Folder bên " + dst;
-  $("lb-src").textContent = "Địa chỉ " + src;
-  $("lb-dst").textContent = "Địa chỉ " + dst;
-  $("lb-dstpass").textContent = "Mật khẩu " + dst;
+  // "nguon"/"dich" phai nam TRONG nhan, khong duoc chi dua vao ten provider:
+  // ca migrate hay gap nhat cua mot nha cung cap la cPanel -> cPanel, luc do
+  // ca ba nhan ra chuoi giong het nhau va khong con gi phan biet o nao la dau
+  // nao. Dat nham thi chay nguoc -- chep tu server moi ve server cu.
+  $("lb-src").textContent = "Địa chỉ nguồn · " + src;
+  $("lb-dst").textContent = "Địa chỉ đích · " + dst;
+  $("lb-dstpass").textContent = "Mật khẩu đích · " + dst;
   // OAuth2 và master: không ai có mật khẩu của từng user, nên không hỏi.
   passField("wrap-srcpass", state.needs_src_password);
   passField("wrap-dstpass", state.needs_dst_password);
   $("lb-srcpass").textContent =
-    state.source_provider.indexOf("Gmail") === 0 ? "App Password (16 ký tự)"
-                                                 : "Mật khẩu " + src;
+    state.source_provider.indexOf("Gmail") === 0
+      ? "App Password nguồn (16 ký tự)"
+      : "Mật khẩu nguồn · " + src;
 }
 
 function schedule() {
@@ -391,7 +414,7 @@ $("addform").onsubmit = async (e) => {
   e.preventDefault();
   const form = e.target;
   const body = Object.fromEntries(new FormData(form).entries());
-  const note = $("addnote");
+  const note = $("addstatus");
   try {
     const res = await fetch("/api/users", {
       method: "POST", credentials: "same-origin",

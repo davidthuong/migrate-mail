@@ -646,3 +646,126 @@ class TestActionTable(unittest.TestCase):
     def test_resume_has_a_button(self):
         from migrate_mail.web_ui import PAGE
         self.assertIn('data-act="resume"', PAGE)
+
+
+CONFIG_SOURCE_MASTER = """[source]
+provider = dovecot
+host = mail.cu.vn
+port = 993
+ssl = true
+auth = master
+master_user = migrate
+master_password = BiMatNguon
+
+[dest]
+provider = dovecot
+host = mail.moi.vn
+port = 993
+ssl = true
+
+[sync]
+workers = 2
+
+[paths]
+imapsync = {imapsync}
+logdir = logs
+statedir = state
+"""
+
+# Dung dinh dang ma README bao dung khi nguon chay auth = master: KHONG co cot
+# src_password. Khac fixture kia o mot cho quan trong -- cot bi bo nam o GIUA,
+# khong phai o cuoi.
+USERS_NO_SRC_PASSWORD = """src_user,dst_user,dst_password
+an@cu.vn,an@moi.vn,MatKhauDichAn
+binh@cu.vn,binh@moi.vn,MatKhauDichBinh
+"""
+
+
+class TestAddUserKeepsTheFileReadable(WebTestCase):
+    """Them mailbox qua dashboard khong duoc lam hong users.csv.
+
+    Truoc day _add_user luon ghi du BON cot theo COLUMNS, bat ke file that co
+    may cot. Voi file bo cot GIUA (src_user,dst_user,dst_password -- dung dinh
+    dang cho auth = master) thi moi truong bi lech mot nac: gia tri rong cua
+    src_password roi vao cot dst_user, va dia chi dich roi vao cot mat khau.
+
+    Hau qua tren rig that: bam "Them vao danh sach" xong thi CA TOOL ngung
+    chay -- preflight lan sync deu chet voi "users.csv dong 5 thieu gia tri:
+    dst_user" -- cho den khi co nguoi mo file ra sua tay.
+    """
+
+    config_text = CONFIG_SOURCE_MASTER
+    users_text = USERS_NO_SRC_PASSWORD
+
+    def test_form_khong_hoi_mat_khau_nguon(self):
+        self.assertFalse(self.state()["needs_src_password"])
+
+    def test_dong_moi_doc_lai_dung(self):
+        self.post("/api/users", {"src_user": "moi@cu.vn",
+                                 "dst_user": "moi@moi.vn",
+                                 "dst_password": "MatKhauMoi"})
+        from migrate_mail.users import load_users
+        users = load_users(self.users_path, need_src_password=False)
+        moi = [u for u in users if u.src_user == "moi@cu.vn"]
+        self.assertEqual(len(moi), 1, self.users_path.read_text(encoding="utf-8"))
+        self.assertEqual(moi[0].dst_user, "moi@moi.vn")
+        self.assertEqual(moi[0].dst_password, "MatKhauMoi")
+
+    def test_so_truong_moi_dong_bang_so_cot(self):
+        self.post("/api/users", {"src_user": "moi@cu.vn",
+                                 "dst_user": "moi@moi.vn",
+                                 "dst_password": "MatKhauMoi"})
+        lines = [l for l in self.users_path.read_text(encoding="utf-8").splitlines()
+                 if l.strip() and not l.lstrip().startswith("#")]
+        widths = {len(l.split(",")) for l in lines}
+        self.assertEqual(widths, {3}, lines)
+
+    def test_danh_sach_van_dung_duoc_sau_khi_them(self):
+        """Cai nay moi la thu nguoi dung thay: bam xong thi tool con chay."""
+        self.post("/api/users", {"src_user": "moi@cu.vn",
+                                 "dst_user": "moi@moi.vn",
+                                 "dst_password": "MatKhauMoi"})
+        self.assertEqual(len(self.state()["mailboxes"]), 3)
+
+    def test_gia_tri_khong_co_cho_thi_bao_ra_chu_khong_vut(self):
+        """File nay khong co cot src_password. Neu ai do van gui mat khau
+        nguon len thi phai bao, dung im lang vut di."""
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/users", {"src_user": "moi@cu.vn",
+                                     "src_password": "aaaabbbbccccdddd",
+                                     "dst_user": "moi@moi.vn",
+                                     "dst_password": "MatKhauMoi"})
+        self.assertEqual(ctx.exception.code, 400)
+        self.assertIn("src_password", ctx.exception.read().decode("utf-8"))
+
+
+class TestPageStructure(unittest.TestCase):
+    """Hai cai bay trong trang HTML, deu tim ra khi mo that trong trinh duyet."""
+
+    def test_cho_bao_ket_qua_khong_chua_usersfile(self):
+        """Handler thanh cong ghi de len #addstatus. Neu #usersfile nam trong
+        do thi textContent xoa no, roi refresh() nem TypeError va vong cap
+        nhat chet han -- dashboard dung hinh khong mot loi bao."""
+        from migrate_mail.web_ui import PAGE
+        start = PAGE.index('id="addstatus"')
+        end = PAGE.index("</div>", start)
+        self.assertNotIn("usersfile", PAGE[start:end])
+
+    def test_refresh_goi_schedule_du_phia_tren_hong(self):
+        from migrate_mail.web_ui import PAGE
+        body = PAGE[PAGE.index("async function refresh()"):]
+        body = body[:body.index("\n}")]
+        self.assertIn("catch", body)
+        # schedule() phai nam NGOAI khoi try, o cuoi ham
+        self.assertGreater(body.rindex("schedule()"), body.rindex("catch"))
+
+    def test_nhan_form_noi_ro_nguon_hay_dich(self):
+        """cPanel -> cPanel la ca hay gap nhat cua mot nha cung cap; luc do
+        ten provider khong phan biet duoc o nao la dau nao."""
+        from migrate_mail.web_ui import PAGE
+        for label in ('$("lb-src")', '$("lb-dst")', '$("lb-dstpass")'):
+            line = [l for l in PAGE.splitlines() if label in l and "textContent" in l]
+            self.assertTrue(line, label)
+            text = line[0]
+            self.assertTrue("nguồn" in text or "đích" in text,
+                            "%s khong noi nguon hay dich: %s" % (label, text))

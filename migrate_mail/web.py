@@ -413,13 +413,40 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "khong tim thay"}, 404)
 
 
+def _existing_header(users_path: Path) -> Optional[List[str]]:
+    """Ten cot o dong dau cua users.csv, hoac None neu file chua co.
+
+    Phai doc lai chu khong duoc dung COLUMNS: file that hay THIEU cot. Chay
+    auth = master hoac oauth2 thi khong ai co mat khau cua tung hop thu, va
+    README bao xoa han cot do di -- luc do file chi con ba cot, co khi hai.
+    Ghi du bon cot vao mot file ba cot thi moi dong moi deu thua mot truong,
+    va ca danh sach hong: `preflight` chet voi "users.csv dong 5 thieu gia tri:
+    dst_user". Do thay khi bam "Them vao danh sach" tren dashboard cua rig.
+    """
+    import csv
+
+    if not users_path.exists() or users_path.stat().st_size == 0:
+        return None
+    try:
+        with users_path.open("r", newline="", encoding="utf-8-sig") as fh:
+            for row in csv.reader(fh):
+                # Bo dong trong va dong ghi chu, giong load_users
+                if not row or not row[0].strip() or row[0].lstrip().startswith("#"):
+                    continue
+                header = [c.strip() for c in row]
+                return header if any(c in users_module.COLUMNS for c in header) else None
+    except OSError:
+        return None
+    return None
+
+
 def _add_user(users_path: Path, body: Dict, need_src_password: bool = True,
               need_dst_password: bool = True) -> str:
     """Them mot dong vao users.csv. Tra ve dia chi nguon vua them."""
     import csv
 
-    fields = list(users_module.COLUMNS)
-    values = {k: str(body.get(k) or "").strip() for k in fields}
+    fields = _existing_header(users_path) or list(users_module.COLUMNS)
+    values = {k: str(body.get(k) or "").strip() for k in users_module.COLUMNS}
     # Dau chay OAuth2 hoac master thi khong ai co mat khau cua tung user; cot
     # van duoc ghi ra cho dung dinh dang file, chi de trong.
     required = users_module.required_columns(need_src_password, need_dst_password)
@@ -439,9 +466,20 @@ def _add_user(users_path: Path, body: Dict, need_src_password: bool = True,
     if values["src_user"].lower() in existing:
         raise ValueError("%s da co trong danh sach" % values["src_user"])
 
+    # Mot gia tri co that ma cot tuong ung khong co trong file thi im lang mat
+    # di. Tha bao ra con hon: nguoi ta vua go mat khau vao mot o ma he thong
+    # se vut bo.
+    dropped = [k for k in users_module.COLUMNS
+               if values[k] and k not in fields]
+    if dropped:
+        raise ValueError(
+            "file %s khong co cot: %s. Them cot do vao dong dau cua file, "
+            "hoac de trong o tuong ung." % (users_path.name, ", ".join(dropped)))
+
     new_file = not users_path.exists() or users_path.stat().st_size == 0
     with users_path.open("a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer = csv.DictWriter(fh, fieldnames=fields,
+                                extrasaction="ignore")
         if new_file:
             writer.writeheader()
         writer.writerow(values)
