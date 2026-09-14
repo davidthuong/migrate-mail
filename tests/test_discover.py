@@ -422,3 +422,60 @@ class TestSpecialUseRoles(unittest.TestCase):
         lines = [imap_line("HasNoChildren", "INBOX"),
                  imap_line("HasNoChildren", "Sent Items")]
         self.assertEqual(self.roles(lines), {})
+
+
+# Nguon kieu Dovecot/cPanel: tien to "INBOX." va dau phan cach "."; dich phang
+# voi dau phan cach "/". Day la cap hay gap nhat cua mot nha cung cap.
+DOVECOT_CO_DAU_BANG = [
+    imap_line("HasNoChildren", "INBOX", delim="."),
+    imap_line("HasNoChildren", "INBOX.Bao gia = 2024", delim="."),
+    imap_line("HasNoChildren", "INBOX.Cong viec", delim="."),
+]
+
+
+class TestDestOfKnowsWhereEachFolderLands(unittest.TestCase):
+    """Ke hoach phai biet folder nguon nao sang folder dich nao -- KE CA nhung
+    folder khong sinh --f1f2.
+
+    Truoc day verify tu doan "khong nam trong mapped thi ten dich = ten nguon".
+    Voi folder co dau '=' thi doan sai: khong co --f1f2 nhung imapsync VAN tu
+    cat tien to va doi dau phan cach, nen ten dich khac ten nguon. Do that tren
+    rig: "INBOX.Bao gia = 2024" sang dich thanh "Bao gia = 2024"; verify di tim
+    theo ten nguon thi "khong mo duoc folder" va bao ca hop thu la LECH trong
+    khi sync da chay dung.
+    """
+
+    def setUp(self):
+        self.plan = build_plan(parse(DOVECOT_CO_DAU_BANG), SyncConf(),
+                               prefix="INBOX.")
+
+    def pairs(self):
+        return {f.raw: dest for f, dest in self.plan.sync_pairs()}
+
+    def test_folder_co_dau_bang_van_biet_ten_dich(self):
+        self.assertEqual(self.pairs()["INBOX.Bao gia = 2024"], "Bao gia = 2024")
+
+    def test_folder_thuong_van_nhu_cu(self):
+        self.assertEqual(self.pairs()["INBOX.Cong viec"], "Cong viec")
+
+    def test_moi_folder_se_chuyen_deu_co_mat(self):
+        se_chuyen = {f.raw for f, _ in self.plan.mapped} | {f.raw for f in self.plan.kept}
+        self.assertEqual(set(self.pairs()), se_chuyen)
+
+    def test_khong_canh_bao_khi_ten_tu_suy_ra_da_dung(self):
+        """Folder thuong co dau '=': imapsync tu ra dung ten, khong co gi de
+        bao. Canh bao thua thi nguoi ta di doi ten folder ben nguon vo ich."""
+        self.assertEqual(self.plan.unmappable, [])
+
+    def test_van_canh_bao_khi_ten_mong_muon_khac(self):
+        """Folder dac biet co dau '=': ten dich lay tu cau hinh/SPECIAL-USE,
+        khac han ten tu suy ra -- luc nay mat --f1f2 la mat that."""
+        folders = parse([
+            imap_line("HasNoChildren", "INBOX", delim="."),
+            imap_line("HasNoChildren Sent", "INBOX.Da gui = cu", delim="."),
+        ])
+        plan = build_plan(folders, SyncConf(), prefix="INBOX.")
+        self.assertEqual([f.raw for f, _ in plan.unmappable], ["INBOX.Da gui = cu"])
+        # Va ten dich that su van la ten imapsync tu dat, khong phai "Sent"
+        self.assertEqual(dict((f.raw, d) for f, d in plan.sync_pairs())
+                         ["INBOX.Da gui = cu"], "Da gui = cu")

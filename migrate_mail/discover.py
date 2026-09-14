@@ -81,6 +81,10 @@ class Plan:
     # Folder le ra phai doi ten nhung ten nguon co chua dau '=' -- xem
     # imapsync_args() de biet vi sao khong dien ta duoc.
     unmappable: List[Tuple[Folder, str]] = field(default_factory=list)
+    # Ten folder DICH that su, khoa theo ten nguon. Co cho MOI folder se duoc
+    # chuyen, ke ca nhung folder khong sinh --f1f2: imapsync van tu doi tien to
+    # va dau phan cach cho chung, nen ten dich cua chung KHONG phai ten nguon.
+    dest_of: Dict[str, str] = field(default_factory=dict)
 
     def imapsync_args(self) -> List[str]:
         args: List[str] = []
@@ -92,6 +96,20 @@ class Plan:
             # ten folder, mapping im lang khong co tac dung nao.
             args += ["--f1f2", "%s=%s" % (folder.raw, dest)]
         return args
+
+    def sync_pairs(self) -> List[Tuple[Folder, str]]:
+        """(folder nguon, ten folder DICH that su) cho moi folder se chuyen.
+
+        Dung cho `verify`. Khong duoc lay f.raw cho nhung folder khong nam
+        trong `mapped`: folder co dau '=' khong sinh duoc --f1f2 nen imapsync
+        tu dat ten theo tien to va dau phan cach cua no, va ten do khac f.raw.
+        Do that tren rig: nguon "INBOX.Bao gia = 2024" sang dich thanh
+        "Bao gia = 2024" -- sync dung, nhung verify di tim f.raw thi khong mo
+        duoc folder va bao ca hop thu la LECH.
+        """
+        pairs = [(f, dest) for f, dest in self.mapped]
+        pairs += [(f, self.dest_of.get(f.raw, f.raw)) for f in self.kept]
+        return pairs
 
     def destinations(self) -> "OrderedDict":
         """Ten folder ben dich -> danh sach folder nguon se do vao do."""
@@ -526,6 +544,12 @@ def build_plan(folders: List[Folder], sync: SyncConf,
             plan.excluded.append((f, value))
             continue
 
+        # Ten imapsync se TU dat neu khong co --f1f2 nao cho folder nay: doi
+        # dau phan cach roi moi them tien to, dung thu tu no lam trong
+        # prefix_seperator_invertion.
+        auto_name = _with_dest_prefix(
+            invert_separator(rel_raw, f.delim, dest.delim), dest.prefix)
+
         role_name = sync.folder_for(value, dest.roles) if kind == "role" else ""
         if role_name:
             # Ten nay da la ten ben dich roi -- do la ten nguoi dung viet
@@ -534,20 +558,24 @@ def build_plan(folders: List[Folder], sync: SyncConf,
             # ben dich von da mang san tien to nen _with_dest_prefix bo qua.
             dest_name = _with_dest_prefix(role_name, dest.prefix)
         else:
-            # Ten suy ra tu nguon: doi dau phan cach roi moi them tien to,
-            # dung thu tu imapsync lam trong prefix_seperator_invertion.
-            dest_name = _with_dest_prefix(
-                invert_separator(rel_raw, f.delim, dest.delim), dest.prefix)
+            dest_name = auto_name
 
-        if dest_name == f.raw:
-            plan.kept.append(f)
-        elif "=" in f.raw:
+        if "=" in f.raw and dest_name != f.raw:
             # --f1f2 dung '=' lam dau phan cach nen khong co cach nao dien ta
-            # ten nguon co chua '='. Bao ra thay vi sinh mot mapping hong ma
-            # khong ai biet.
-            plan.unmappable.append((f, dest_name))
+            # ten nguon co chua '='. Nhung mat mapping chi la VAN DE khi ten ta
+            # muon khac ten imapsync tu suy ra -- voi folder thuong thi hai cai
+            # trung nhau, mail sang dung cho va khong co gi de bao. Do that
+            # tren rig: "INBOX.Bao gia = 2024" sang dich thanh dung
+            # "Bao gia = 2024" du khong co --f1f2 nao ca.
+            if dest_name != auto_name:
+                plan.unmappable.append((f, dest_name))
             plan.kept.append(f)
+            plan.dest_of[f.raw] = auto_name
+        elif dest_name == f.raw:
+            plan.kept.append(f)
+            plan.dest_of[f.raw] = f.raw
         else:
             plan.mapped.append((f, dest_name))
+            plan.dest_of[f.raw] = dest_name
 
     return plan

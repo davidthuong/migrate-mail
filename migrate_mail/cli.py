@@ -906,7 +906,10 @@ def _verify_one(cfg: Config, user: User, cap: int,
         src_conn = open_connection(cfg, user, "source")
         dst_conn = open_connection(cfg, user, "dest")
 
-        pairs = [(f, dest) for f, dest in plan.mapped] + [(f, f.raw) for f in plan.kept]
+        # Ke hoach tu noi folder nao sang folder nao. Truoc day cho nay tu doan
+        # "khong nam trong mapped thi ten dich = ten nguon", va doan sai voi
+        # folder co dau '=': ten dich la ten imapsync tu suy ra, khac f.raw.
+        pairs = plan.sync_pairs()
         for folder, dest_name in pairs:
             fc = verify.FolderCheck(source_folder=folder.display, dest_folder=dest_name)
             try:

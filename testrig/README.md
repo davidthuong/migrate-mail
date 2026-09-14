@@ -171,6 +171,36 @@ Ctrl-C trong 2 giây mới thoát. Cùng lúc đó `KeyboardInterrupt` ở luồ
 mắc kẹt trong `ThreadPoolExecutor.__exit__`. Trước khi có `runner.stop_all()`,
 bấm Ctrl-C không hiện **một chữ nào** và mail vẫn chảy sang đích thêm cả phút.
 
+### Tên folder không chuyển thẳng được
+
+```bash
+python3 testrig/seed_collision.py
+```
+
+| # | Lệnh | Đạt là thấy gì |
+|---|---|---|
+| 18 | `$MM discover --only an@cu.vn` | `INBOX.Bao gia = 2024` nằm ở **GIỮ NGUYÊN**, và **không** có khối `!! KHÔNG ĐỔI TÊN ĐƯỢC !!` |
+| 19 | `$MM sync --only an@cu.vn` rồi `rigcount.py` bên đích | folder đích tên đúng `Bao gia = 2024` — **không** phải `INBOX.Bao gia = 2024` |
+| 20 | `$MM verify --only an@cu.vn` | `OK`, không có dòng `loi: khong mo duoc folder` |
+
+Tên chứa `=` không diễn tả được bằng `--f1f2` vì imapsync tách tham số đó bằng
+đúng dấu `=`. Nhưng **mất mapping không đồng nghĩa với hỏng**: imapsync vẫn tự
+cắt tiền tố và đổi dấu phân cách, nên với một folder thường nó ra đúng cái tên
+mình muốn. Chỉ khi tên đích đến từ chỗ khác — cấu hình, hoặc cờ SPECIAL-USE bên
+đích — thì mất mapping mới thiệt thật. Bài #18 giữ ranh giới đó: cảnh báo thừa
+làm người trực đi đổi tên folder bên nguồn một cách vô ích.
+
+Bài #20 là nửa dễ quên: `verify` phải biết folder đó nằm ở **tên đích**, không
+phải tên nguồn. Trước khi có `Plan.sync_pairs()`, nó đi tìm theo tên nguồn,
+không mở được folder, rồi báo cả hộp thư là `LECH` trong khi `sync` chạy đúng.
+
+Còn ca **hai folder nguồn dồn vào một folder đích** thì chưa dựng được trên
+Dovecot: `INBOX.Du an.2024` và `INBOX.Du an/2024` đều ra `Du an/2024`, nhưng
+Dovecot từ chối tạo tên thứ hai — `[CANNOT] Invalid mailbox name: Name must not
+have '/' characters`. Script giữ lại dòng đó để lần sau khỏi thử lại. Ca này
+gặp thật ở **Gmail → IceWarp**: một nhãn tên `Sent` nằm cạnh `[Gmail]/Sent Mail`
+thì cả hai cùng ra `Sent`.
+
 ### Đầu đích hết chỗ
 
 Hạn mức đích là cả hỏng hay gặp nhất ngoài đời mà rig từng không chạm tới: hộp
