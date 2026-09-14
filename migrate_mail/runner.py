@@ -294,6 +294,33 @@ def build_command(cfg: Config, user: User, plan: Optional[Plan], mode: str,
         cmd += ["--maxbytespersecond", str(sync.maxbytespersecond)]
     if since_days > 0:
         cmd += ["--maxage", str(since_days)]
+        # Cua so delta phai do bang DUNG cai moc ngay ma ta dang giu o tren.
+        #
+        # imapsync mac dinh chon mail cho --maxage bang SEARCH SENTSINCE, tuc
+        # header Date: -- ngay NGUOI GUI bam Gui. Nhung mac dinh cua tool la
+        # giu INTERNALDATE, tuc ngay mail VE hop thu. Hai moc do khac nhau, va
+        # luc cutover thi khoang cach do an mail that:
+        #
+        #   mail forward lai, mail ket hang doi vai ngay moi giao, mail tu he
+        #   thong co dong ho sai, mail khong co header Date: -- tat ca deu VE
+        #   trong cua so cutover nhung mang Date: cu, nen SENTSINCE khong thay.
+        #   Chung o lai server cu, ma server cu thi sap bi xoa.
+        #
+        # Do tren rig: 3 mail cung vua ve, `--since-days 2` chi chuyen 1, va
+        # bao "1/1 mailbox OK | 0 loi le" khong mot loi canh bao.
+        #
+        # --noabletosearch doi sang FETCH internal date. Dat cho CA HAI dau
+        # moi dung: dau dich giu INTERNALDATE chep tu nguon sang (nho
+        # --syncinternaldates o tren), nen hai ben do cung mot moc va imapsync
+        # doi chieu duoc. Chi dat --noabletosearch1 thi dau dich van loc bang
+        # Date: cu, no khong "thay" mail da co san va se chep lai -> nhan ban.
+        #
+        # Nguoc lai, date_source = header nghia la ta co y dung Date: lam moc
+        # (INTERNALDATE ben nguon khong dang tin, vd hop thu tung import tu noi
+        # khac). Luc do ca hai dau deu mang Date: do, nen de imapsync search
+        # theo Date: la dung -- khong dat co nay.
+        if sync.date_source != "header":
+            cmd += ["--noabletosearch"]
 
     cmd += ["--timeout", str(sync.timeout)]
     cmd += ["--errorsmax", str(sync.errorsmax)]
@@ -562,7 +589,8 @@ def flags_used(cfg: Config) -> List[str]:
         "--host2", "--port2", "--ssl2", "--notls2", "--user2", "--passfile2",
         "--exclude", "--f1f2", "--useheader", "--addheader", "--filterflags",
         "--skipcrossduplicates", "--nousecache", "--maxsize", "--maxbytespersecond",
-        "--maxage", "--timeout", "--errorsmax", "--nofoldersizes", "--noreleasecheck",
+        "--maxage", "--noabletosearch",
+        "--timeout", "--errorsmax", "--nofoldersizes", "--noreleasecheck",
         "--nolog", "--tmpdir", "--pidfile", "--dry", "--justfolders",
         "--justfoldersizes",
         "--syncinternaldates", "--idatefromheader",

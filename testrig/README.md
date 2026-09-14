@@ -120,6 +120,26 @@ nhất lại nằm ở lượt thứ hai.
 | 12 | đổ thêm mail vào nguồn rồi chạy lại | chỉ **đúng số mail mới** được chuyển, không phải cả hộp |
 | 13 | Ctrl-C giữa lúc đang chép | hiện ngay `Dang dung... da bao N imapsync ket thuc`, và tiến trình tắt trong ~1 giây. Xem ghi chú dưới |
 | 14 | chạy lại sau khi cắt | phần còn thiếu được chuyển nốt, tổng khớp nguồn, `verify` lệch 0, **không mail nào nhân đôi** |
+| 15 | `python3 testrig/seed_delta.py` rồi `$MM sync --only an@cu.vn --since-days 2` | **cả ba** mail sang đích, không phải một. Chạy lại lệnh đó lần nữa: `0 mail`, và `rigcount.py` báo `0 id bi lap` |
+
+Bài #15 kiểm một chỗ mà cả `verify` lẫn số tổng kết đều không nhìn thấy. Ba mail
+của `seed_delta.py` đều **vừa về** nguồn, chỉ khác nhau ở header `Date:`: một
+cái hôm nay, một cái 10 ngày trước, một cái không có header đó. Mặc định của
+imapsync chọn mail cho `--maxage` bằng `SEARCH SENTSINCE`, tức đọc `Date:`, nên
+hai cái sau bị bỏ lại — báo cáo vẫn `1/1 mailbox OK | 0 loi le`.
+
+Ba kết cục có thể gặp, đã đo hết trên rig:
+
+| `--noabletosearch` đặt ở đâu | Vòng cutover |
+|---|---|
+| không đặt | **mất 2 mail**, im lặng |
+| chỉ `--noabletosearch1` (đầu nguồn) | **nhân đôi đúng 2 mail đó** ở lần delta sau |
+| cả hai đầu (tool đang làm) | 36/36, 0 lặp, ổn định qua ba vòng |
+
+Cột giữa là lý do phải đặt cho **cả hai** đầu: đầu đích giữ `INTERNALDATE` chép
+từ nguồn sang, nên khi cả hai cùng lọc theo mốc đó thì imapsync đối chiếu được;
+đặt lệch thì đầu đích vẫn lọc bằng `Date:`, nó không thấy mail đã có sẵn và chép
+lại lần nữa.
 
 Đếm bằng `rigcount.py` — `mm verify` đối chiếu *ngày tháng*, nó không trả lời
 được câu "có mail nào bị chép hai lần không", mà nhân bản thì `verify` vẫn báo

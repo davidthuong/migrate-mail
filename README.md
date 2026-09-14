@@ -801,6 +801,25 @@ python3 mm.py sync --since-days 7
 Sau khi MX đã trỏ về IceWarp và đã ổn định, chạy thêm một lần nữa để nhặt nốt
 mail đến muộn ở Gmail.
 
+> **`--since-days` đếm theo ngày mail *về* hộp thư, không phải ngày trên header
+> `Date:`.** Hai mốc này khác nhau, và đúng lúc cutover thì khoảng cách đó ăn
+> mail thật: thư forward lại, thư kẹt hàng đợi vài ngày mới giao, thư từ hệ
+> thống có đồng hồ sai, thư không có header `Date:` — tất cả đều **về** trong
+> cửa sổ cutover nhưng mang `Date:` cũ.
+>
+> Mặc định của imapsync là lọc bằng `SEARCH SENTSINCE`, tức header `Date:`, nên
+> nó bỏ lại đúng những thư đó — mà báo cáo vẫn `OK`, không một dòng cảnh báo.
+> Đo trên rig: ba thư cùng vừa về, `--since-days 2` chỉ chuyển một. Tool thêm
+> `--noabletosearch` để đổi sang `INTERNALDATE` cho khớp với `date_source =
+> internal` mà nó đang giữ.
+>
+> Cái giá: imapsync phải `FETCH` ngày của từng thư thay vì để server `SEARCH`,
+> nên vòng delta trên hộp thư rất lớn sẽ chậm hơn. Đổi lại là không mất thư ở
+> đúng lúc không sửa lại được.
+>
+> Nếu đặt `date_source = header` thì tool **không** thêm cờ đó — lúc ấy chính
+> `Date:` mới là mốc ta cố ý dùng, và cả hai đầu đều mang nó.
+
 ---
 
 ## Ngày tháng của mail

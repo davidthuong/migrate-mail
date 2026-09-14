@@ -619,3 +619,42 @@ class TestStopAll(unittest.TestCase):
 
         self.assertEqual(set(), runner._LIVE_PROCS)
         self.assertEqual(0, result.exit_code)
+
+
+class TestDeltaWindowUsesArrivalDate(unittest.TestCase):
+    """--since-days phai do bang dung cai moc ngay tool dang giu.
+
+    imapsync mac dinh chon mail cho --maxage bang SEARCH SENTSINCE, tuc header
+    Date:. Nhung mac dinh cua tool la giu INTERNALDATE. Do tren rig: 3 mail
+    cung vua ve nguon, `--since-days 2` chi chuyen 1 -- hai cai kia mang Date:
+    cu va Date: rong nen bi bo lai, con tong ket van bao "1/1 mailbox OK".
+    """
+
+    def test_since_days_do_theo_ngay_mail_ve(self):
+        cmd = build(since_days=7)
+        self.assertIn(("--maxage", "7"), pairs(cmd))
+        self.assertIn("--noabletosearch", cmd)
+
+    def test_dat_cho_ca_hai_dau_chu_khong_rieng_nguon(self):
+        """Chi dat cho nguon thi dau dich van loc bang Date: -- no khong thay
+        mail da co san nen chep lai, thanh nhan ban."""
+        cmd = build(since_days=7)
+        self.assertNotIn("--noabletosearch1", cmd)
+        self.assertNotIn("--noabletosearch2", cmd)
+
+    def test_khong_co_since_days_thi_khong_dat(self):
+        """Chay day du thi khong loc theo tuoi, dat co nay chi lam cham."""
+        self.assertNotIn("--noabletosearch", build())
+
+    def test_date_source_header_thi_de_imapsync_search_theo_date(self):
+        """date_source = header nghia la ta CO Y lay Date: lam moc, va luc do
+        ca hai dau deu mang Date: do -- search theo Date: la dung."""
+        cmd = build(make_cfg(date_source="header"), since_days=7)
+        self.assertIn(("--maxage", "7"), pairs(cmd))
+        self.assertNotIn("--noabletosearch", cmd)
+        self.assertIn("--idatefromheader", cmd)
+
+    def test_doctor_kiem_ca_co_nay(self):
+        """imapsync qua cu khong biet --noabletosearch se dung ngay khi gap
+        tuy chon la, nen doctor phai bat truoc."""
+        self.assertIn("--noabletosearch", flags_used(make_cfg()))
