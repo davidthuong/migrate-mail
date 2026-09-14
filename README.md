@@ -292,7 +292,8 @@ thử trước:
 | **Dovecot** | Chạy thật đầu-cuối, cả hai `master_style`, cả hai đầu — Ubuntu 24.04 / Dovecot 2.3.19.1 / imapsync 2.314. Dựng lại bằng [`testrig/`](testrig/) |
 | **Zimbra** | **Chưa chạy thật lần nào.** Phần dưới là suy ra từ tài liệu Zimbra và imapsync, không phải từ quan sát |
 | **IMAP chung** | Để ngỏ, không phải lời hứa — tuỳ server |
-| Kết nối SSL | Rig chạy plaintext trong mạng kín, nên đường 993 chưa được thử với `auth = master` |
+| Kết nối TLS | Rig mặc định chạy 993 có đối chiếu chứng chỉ, và `auth = master` chạy trọn trên đó — preflight, sync, `verify` lệch 0 ngày. Gỡ CA khỏi trust store thì **cả hai** nửa dừng lại, đúng như phải thế |
+| Kiểm tên host trong chứng chỉ | Rig không trả lời được (chứng chỉ của nó cấp đúng tên), nên có phép thử riêng: [`testrig/tlsprobe.sh`](testrig/tlsprobe.sh), 10/10 ô khớp trên VPS thật và trên máy dev |
 
 Với Zimbra hoặc một server lạ, chạy `preflight` trên **một** hộp thư trước đã.
 
@@ -592,6 +593,13 @@ kiểm tra cột *Mail lớn nhất* có vượt giới hạn của server đíc
 >
 > Dòng đó có sẵn số mail/s và tổng đã chép. Lấy dung lượng còn lại chia cho tốc
 > độ là ra.
+
+> **Tốc độ do cả hai đầu quyết định, không riêng nguồn.** Đo thật với cùng một
+> nguồn ra hai đích khác nhau: sang IceWarp **311,6 KiB/s**, sang Gmail
+> **38,6 KiB/s** — chậm gấp 8 lần. Nghĩa là tốc độ ghi lại từ một cuộc migrate
+> trước chỉ dùng lại được khi **cả hai** đầu giống nhau. Gmail làm đích thì cứ
+> nhân thời gian dự tính lên, và lấy một hộp nhỏ đo trước rồi mới suy ra cả
+> danh sách.
 
 Sau bước 6, chạy lại `discover --dest` là thấy toàn bộ cây folder — đối chiếu
 với kế hoạch ở bước 3 xem tên có đúng không, trước khi đụng vào mail thật.
@@ -1096,8 +1104,10 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     450 test, không chạm mạng
+tests/                     502 test, không chạm mạng
+testrig/                   hai Dovecot để thử những gì test không chứng minh được
 install.sh                 cài imapsync + module Perl
+.github/workflows/         CI: chạy bộ test trên Python 3.8 / 3.10 / 3.12
 ```
 
 **Thêm một nguồn mới** là thêm một `Provider` vào `providers.py` — khai báo host
@@ -1113,6 +1123,11 @@ python3 -m unittest discover -s tests
 
 Test dùng một imapsync giả và dữ liệu folder mẫu, nên chạy được ở bất cứ đâu,
 không cần mạng và không cần tài khoản thật.
+
+CI chạy đúng lệnh đó trên mỗi push và pull request, với Python **3.8** (bản cũ
+nhất còn gặp trên VPS khách), **3.10** và **3.12** (bản của Ubuntu 24.04, nơi
+tool đã chạy thật) — xem [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+Không có bước cài đặt nào vì bộ test chỉ dùng thư viện chuẩn.
 
 ---
 

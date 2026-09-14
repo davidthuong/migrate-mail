@@ -1,0 +1,77 @@
+# Chay bo test tren moi push va moi pull request.
+#
+# Bo test khong cham mang va chi dung thu vien chuan cua Python, nen khong co
+# buoc cai dat gi ca -- checkout roi chay la xong.
+#
+# Ma tran phien ban chon theo may thuc te, khong phai chon cho du bo:
+#   3.8   ban cu nhat con gap tren VPS khach (Ubuntu 20.04/22.04), cung la ban
+#         tren may dev. Day la san thuc su phai giu.
+#   3.10  o giua, de bat loi chi hong o mot ban le.
+#   3.12  ban cua Ubuntu 24.04 -- noi tool da chay that.
+# Runner ubuntu-24.04 khong con cap Python 3.8 nen leg do chay tren 22.04.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    name: test / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-22.04, python: "3.8"}
+          - {os: ubuntu-latest, python: "3.10"}
+          - {os: ubuntu-latest, python: "3.12"}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Bo test
+        run: python -m unittest discover -s tests
+
+      # Khong test nao nap mm.py, trong khi do moi la thu nguoi ta chay that.
+      # Mot lenh khong can config va khong ra mang la du de biet diem vao con
+      # song.
+      - name: Diem vao con chay
+        run: python mm.py providers
+
+  scripts:
+    name: script shell + ket thuc dong
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # .gitattributes ep LF vi mot file .sh co CRLF se chet ngay dong dau:
+      # "bad interpreter: /usr/bin/env bash^M". Phai soi INDEX chu khong phai
+      # thu muc lam viec -- eol=lf lam checkout tren Linux luon ra LF, nen mot
+      # blob CRLF trong index van hien ra LF o day va loi chi lo tren may khac.
+      - name: Khong co CRLF trong index
+        run: |
+          bad="$(git ls-files --eol -- '*.sh' '*.py' '*.ini' '*.csv' '*.md' '*.yml' \
+                 | grep -v '^i/lf' || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::cac file sau co ket thuc dong khong phai LF:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+
+      # bash -n chi doc file DAU TIEN, cac ten sau thanh tham so vi tri, nen
+      # phai lap chu khong duoc liet ke mot dong.
+      - name: Cu phap shell
+        run: |
+          for f in install.sh testrig/*.sh; do
+            echo "-- $f"
+            bash -n "$f"
+          done
