@@ -66,16 +66,31 @@ class TestParseFetchResponse(unittest.TestCase):
             fetch_item(1, "17-Mar-2024 09:00:00 +0700", "<a@x.com>"), b")",
             fetch_item(2, "18-Mar-2024 09:00:00 +0700", "<b@x.com>"), b")",
         ]
-        out = verify.parse_fetch_response(data)
+        out, without_id = verify.parse_fetch_response(data)
         self.assertEqual(sorted(out), ["<a@x.com>", "<b@x.com>"])
+        self.assertEqual(without_id, 0)
 
     def test_skips_entries_without_message_id(self):
         data = [(fetch_head(1, "17-Mar-2024 09:00:00 +0700"), b"Subject: no id\r\n")]
-        self.assertEqual(verify.parse_fetch_response(data), {})
+        self.assertEqual(verify.parse_fetch_response(data), ({}, 1))
+
+    def test_counts_entries_without_message_id(self):
+        """Mail thieu Message-Id khong vao map duoc, ma cung KHONG bi tinh la
+        thieu ben dich -- no bi loai truoc ca phep tru sinh ra con so do.
+        Khong dem rieng thi no bien mat khoi moi con so, va verify bao "khop
+        het" trong khi im lang bo qua mot phan hop thu."""
+        data = [
+            fetch_item(1, "17-Mar-2024 09:00:00 +0700", "<a@x.com>"), b")",
+            (fetch_head(2, "18-Mar-2024 09:00:00 +0700"), b"Subject: thu soan do\r\n"),
+            (fetch_head(3, "19-Mar-2024 09:00:00 +0700"), b"Subject: ban fax\r\n"),
+        ]
+        index, without_id = verify.parse_fetch_response(data)
+        self.assertEqual(sorted(index), ["<a@x.com>"])
+        self.assertEqual(without_id, 2)
 
     def test_empty_input_is_safe(self):
-        self.assertEqual(verify.parse_fetch_response([]), {})
-        self.assertEqual(verify.parse_fetch_response(None), {})
+        self.assertEqual(verify.parse_fetch_response([]), ({}, 0))
+        self.assertEqual(verify.parse_fetch_response(None), ({}, 0))
 
 
 class TestSampleSequenceSet(unittest.TestCase):

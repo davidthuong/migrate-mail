@@ -773,11 +773,22 @@ Bên nguồn lấy mẫu (đắt, có thể bị bóp băng thông), bên đích
 cùng số lượng và thứ tự cũng khác, nên hai mẫu rơi vào hai tập mail khác nhau
 và phần không giao nhau bị báo nhầm là thiếu.
 
-> Cột **`thiếu bên đích`** vẫn còn một phần dư giải thích được: mail vốn không
-> có `Message-Id` (hay gặp ở Drafts) được `--addheader` gắn cho một cái lúc
-> chép sang, nên hai đầu không ghép được. Con số đếm đủ và đáng tin về việc có
-> sót mail hay không nằm ở dòng `Messages found in host1 not in host2` cuối log
-> sync — imapsync đối chiếu từng mail chứ không lấy mẫu.
+> Con số đếm đủ và đáng tin về việc có sót mail hay không nằm ở dòng
+> `Messages found in host1 not in host2` cuối log sync — imapsync đối chiếu
+> từng mail chứ không lấy mẫu. Cột **`thiếu bên đích`** ở đây chỉ là mẫu.
+
+> Cột **`không kiểm được`** là mail bên nguồn vốn **không có `Message-Id`** —
+> hay gặp ở Drafts (thư soạn dở chưa gửi bao giờ thì chưa ai gắn định danh cho
+> nó) và ở mail do máy quét sinh ra. Chúng vẫn được chuyển bình thường, và
+> `--addheader` gắn cho mỗi cái một định danh lúc chép sang nên chúng **không**
+> bị nhân đôi ở vòng delta. Nhưng đúng vì thế mà hai đầu không còn chung
+> `Message-Id` nào để ghép, nên phép đối chiếu ngày không với tới chúng. Muốn
+> kiểm thì phải mở bằng mắt.
+>
+> Những mail này **không** rơi vào cột `thiếu bên đích`: thiếu `Message-Id` thì
+> chúng bị loại khỏi bảng chỉ mục ngay từ đầu, tức là trước cả phép trừ sinh ra
+> con số đó. Nếu không đếm riêng, chúng biến mất khỏi mọi con số và `verify`
+> sẽ báo "khớp hết" trong khi im lặng bỏ qua một phần hộp thư.
 
 ### 7. Cutover
 

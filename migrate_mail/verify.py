@@ -38,6 +38,9 @@ class FolderCheck:
     matched: int = 0
     mismatched: int = 0
     missing_on_dest: int = 0
+    # Mail ben nguon khong co Message-Id: khong doi chieu duoc, ma cung KHONG
+    # phai mail thieu. Khong dem rieng thi chung bien mat khoi bao cao.
+    source_without_msgid: int = 0
     source_total: int = 0
     dest_total: int = 0
     error: str = ""
@@ -66,6 +69,10 @@ class UserCheck:
     @property
     def missing(self) -> int:
         return sum(f.missing_on_dest for f in self.folders)
+
+    @property
+    def without_msgid(self) -> int:
+        return sum(f.source_without_msgid for f in self.folders)
 
     @property
     def ok(self) -> bool:
@@ -101,18 +108,30 @@ def parse_message_id(raw: bytes) -> str:
     return m.group(1).decode("ascii", "replace").strip() if m else ""
 
 
-def parse_fetch_response(data) -> Dict[str, float]:
-    """Doc ket qua FETCH thanh map: Message-Id -> epoch cua INTERNALDATE."""
+def parse_fetch_response(data) -> Tuple[Dict[str, float], int]:
+    """Doc ket qua FETCH thanh map: Message-Id -> epoch cua INTERNALDATE.
+
+    Tra ve them SO MAIL KHONG CO Message-Id. Nhung mail do khong vao duoc map,
+    nen chung khong doi chieu duoc va cung khong bi tinh la "thieu ben dich" --
+    chung bien mat khoi moi con so. Phai dem rieng, neu khong verify se bao
+    "khop het" trong khi im lang bo qua mot phan hop thu.
+
+    Hay gap o Drafts (thu soan do dang chua gui bao gio thi chua ai gan dinh
+    danh cho no) va o mail do may quet / fax sinh ra.
+    """
     out: Dict[str, float] = {}
+    without_id = 0
     for item in data or []:
         if not isinstance(item, tuple) or len(item) < 2:
             continue
         head, body = item[0], item[1]
         epoch = parse_internaldate(head)
         msgid = parse_message_id(body)
-        if msgid and epoch is not None:
+        if not msgid:
+            without_id += 1
+        elif epoch is not None:
             out[msgid] = epoch
-    return out
+    return out, without_id
 
 
 def sample_sequence_set(total: int, cap: int) -> str:
@@ -138,19 +157,24 @@ def folder_message_count(select_response) -> int:
     return 0
 
 
-def fetch_index(conn, folder_raw: str, cap: int) -> Tuple[Dict[str, float], int]:
-    """Lay map Message-Id -> epoch cho mot folder. Tra ve (map, tong so mail)."""
+def fetch_index(conn, folder_raw: str, cap: int) -> Tuple[Dict[str, float], int, int]:
+    """Lay map Message-Id -> epoch cho mot folder.
+
+    Tra ve (map, tong so mail trong folder, so mail trong MAU khong co
+    Message-Id).
+    """
     typ, data = conn.select(quote_folder(folder_raw), readonly=True)
     if typ != "OK":
         raise RuntimeError("khong mo duoc folder")
     total = folder_message_count(data)
     if total == 0:
-        return {}, 0
+        return {}, 0, 0
     seq = sample_sequence_set(total, cap)
     typ, fetched = conn.fetch(seq, "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
     if typ != "OK":
         raise RuntimeError("FETCH that bai")
-    return parse_fetch_response(fetched), total
+    index, without_id = parse_fetch_response(fetched)
+    return index, total, without_id
 
 
 def compare_indexes(src: Dict[str, float], dst: Dict[str, float],

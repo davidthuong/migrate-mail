@@ -908,8 +908,9 @@ def _verify_one(cfg: Config, user: User, cap: int,
                 # roi vao hai tap mail khac nhau. Phan khong giao nhau bi tinh
                 # thanh "thieu ben dich" -- co lan bao thieu 504 mail tren mot
                 # hop thu ma imapsync da xac nhan la day du.
-                src_index, fc.source_total = verify.fetch_index(src_conn, folder.raw, cap)
-                dst_index, fc.dest_total = verify.fetch_index(dst_conn, dest_name, 0)
+                src_index, fc.source_total, fc.source_without_msgid = \
+                    verify.fetch_index(src_conn, folder.raw, cap)
+                dst_index, fc.dest_total, _ = verify.fetch_index(dst_conn, dest_name, 0)
             except Exception as exc:
                 fc.error = str(exc)
                 check.folders.append(fc)
@@ -970,9 +971,12 @@ def cmd_verify(args, cfg: Config) -> int:
                     out("LOI  %-32s %s" % (check.src_user, check.error))
                     continue
                 flag = "OK  " if check.ok else "LECH"
-                out("%s %-32s doi chieu %d mail, lech %d, thieu ben dich %d"
+                # Chi them ve cuoi khi co, de dong thuong gap khong dai them.
+                extra = (", %d khong kiem duoc" % check.without_msgid
+                         if check.without_msgid else "")
+                out("%s %-32s doi chieu %d mail, lech %d, thieu ben dich %d%s"
                     % (flag, check.src_user, check.compared, check.mismatched,
-                       check.missing))
+                       check.missing, extra))
                 for fc in check.folders:
                     if fc.error:
                         out("       %-28s loi: %s" % (fc.source_folder, fc.error))
@@ -987,6 +991,7 @@ def cmd_verify(args, cfg: Config) -> int:
         total_cmp = sum(c.compared for c in checks)
         total_bad = sum(c.mismatched for c in checks)
         total_missing = sum(c.missing for c in checks)
+        total_no_id = sum(c.without_msgid for c in checks)
         failed = [c for c in checks if not c.ok]
 
         out("")
@@ -997,12 +1002,17 @@ def cmd_verify(args, cfg: Config) -> int:
         out("Ket qua: %d mail doi chieu, %d lech ngay (%.2f%%)."
             % (total_cmp, total_bad, 100.0 * total_bad / total_cmp))
         if total_missing:
-            out("%d mail trong mau khong tim thay ben dich. Mot phan la mail von "
-                "khong co Message-Id (hay gap o Drafts) duoc --addheader gan cho "
-                "mot cai luc chep sang, nen hai dau khong ghep duoc. Con lai la "
-                "mail thieu that -- doi chieu voi dong 'Messages found in host1 "
-                "not in host2' o cuoi log sync, do la so dem day du chu khong "
-                "phai lay mau." % total_missing)
+            out("%d mail trong mau khong tim thay ben dich. Doi chieu voi dong "
+                "'Messages found in host1 not in host2' o cuoi log sync -- do "
+                "la so dem day du chu khong phai lay mau." % total_missing)
+        if total_no_id:
+            out("%d mail ben nguon khong co Message-Id nen KHONG kiem duoc ngay "
+                "(hay gap o Drafts va o mail do may quet sinh ra). Chung van "
+                "duoc chuyen binh thuong -- --addheader gan cho moi cai mot "
+                "dinh danh luc chep sang, nen chung khong bi nhan doi o vong "
+                "delta -- nhung vi hai dau khong con chung Message-Id nao de "
+                "ghep, phep doi chieu ngay khong voi toi chung. Muon kiem thi "
+                "phai mo bang mat." % total_no_id)
         if total_bad:
             out("")
             out("Ngay KHONG duoc giu nguyen. Kiem tra theo thu tu nay:")

@@ -445,7 +445,7 @@ class TestVerifyCommand(CliTestCase):
 
         def fake(conn, folder, cap):
             caps.append(cap)
-            return {"<a@x>": 1000.0}, 1
+            return {"<a@x>": 1000.0}, 1, 0
 
         _code, out = self.run_verify(fake, "--sample", "50")
         self.assertTrue(caps, out)
@@ -454,7 +454,7 @@ class TestVerifyCommand(CliTestCase):
 
     def test_writes_a_log_file(self):
         """Truoc day verify chi in ra man hinh: chay bang screen la mat ket qua."""
-        _code, out = self.run_verify(lambda c, f, cap: ({"<a@x>": 1000.0}, 1))
+        _code, out = self.run_verify(lambda c, f, cap: ({"<a@x>": 1000.0}, 1, 0))
         files = list((self.tmp / "logs").glob("verify-*.txt"))
         self.assertEqual(len(files), 1, out)
         text = files[0].read_text(encoding="utf-8")
@@ -463,7 +463,7 @@ class TestVerifyCommand(CliTestCase):
         self.assertIn("Da ghi", out)
 
     def test_log_is_written_even_when_nothing_could_be_compared(self):
-        _code, _out = self.run_verify(lambda c, f, cap: ({}, 0))
+        _code, _out = self.run_verify(lambda c, f, cap: ({}, 0, 0))
         self.assertEqual(len(list((self.tmp / "logs").glob("verify-*.txt"))), 1)
 
 
@@ -860,3 +860,65 @@ class TestCtrlCStopsTheRun(unittest.TestCase):
         t.join(5)
         self.assertTrue(seen.get("ok"), seen.get("loi"))
         self.assertIs(seen["handler"], self.previous)
+
+
+class TestVerifyReportsUncheckableMail(CliTestCase):
+    """Mail khong co Message-Id phai duoc DEM va NOI RA.
+
+    Truoc day chung bien mat khoi moi con so: thieu Message-Id thi bi loai
+    khoi bang chi muc ngay tu dau, tuc la truoc ca phep tru sinh ra cot "thieu
+    ben dich". Verify bao "doi chieu 30 mail, lech 0" tren mot hop thu 33 mail
+    va ket luan "ngay thang duoc giu nguyen" -- dung voi 30 cai no xem, im
+    lang voi 3 cai con lai. Doc "chuyen 33 mail, verify OK" thi khong ai biet
+    co 3 mail chua bao gio duoc kiem.
+    """
+
+    def run_verify(self, fetch_index, *extra):
+        conn = mock.MagicMock()
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
+             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+            return self.run_cli("verify", "--only", "an@cu.com", *extra)
+
+    @staticmethod
+    def _index(without_id):
+        """Moi folder co mot mail ghep duoc; DUY NHAT folder nguon dau tien co
+        them `without_id` mail khong Message-Id.
+
+        Don vao mot folder de tong so la con so biet truoc: fixture co nhieu
+        folder, rai deu thi phai nhan len va test doc kho hieu.
+        """
+        seen = []
+
+        def fake(conn, folder, cap):
+            if cap == 0:                      # dau dich doc het
+                return {"<a@x>": 1000.0}, 1, 0
+            seen.append(folder)
+            if len(seen) == 1:
+                return {"<a@x>": 1000.0}, 1 + without_id, without_id
+            return {"<a@x>": 1000.0}, 1, 0
+        return fake
+
+    def test_dem_va_noi_ra_khi_co(self):
+        _code, out = self.run_verify(self._index(3))
+        self.assertIn("3 khong kiem duoc", out)
+        self.assertIn("khong co Message-Id", out)
+        # Phai noi ro mail do VAN duoc chuyen. Doc "khong kiem duoc" ma khong
+        # co cau nay thi nguoi ta tuong la mail mat, roi di tim no ca buoi.
+        self.assertIn("van duoc chuyen binh thuong", out)
+
+    def test_khong_lam_ban_bao_cao_khi_khong_co(self):
+        _code, out = self.run_verify(self._index(0))
+        self.assertNotIn("khong kiem duoc", out)
+
+    def test_van_ket_luan_ngay_khop(self):
+        """Mail khong kiem duoc khong phai la loi: no khong lam verify that bai."""
+        code, out = self.run_verify(self._index(3))
+        self.assertEqual(code, 0)
+        self.assertIn("Ngay thang duoc giu nguyen", out)
+
+    def test_ghi_ca_vao_file_log(self):
+        self.run_verify(self._index(2))
+        files = list((self.tmp / "logs").glob("verify-*.txt"))
+        self.assertEqual(len(files), 1)
+        self.assertIn("khong kiem duoc", files[0].read_text(encoding="utf-8"))
