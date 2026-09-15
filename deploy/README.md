@@ -6,7 +6,7 @@ Thư mục này có hai file để chạy dashboard như một dịch vụ, vào
 | File | Việc |
 |---|---|
 | [`Caddyfile`](Caddyfile) | Reverse proxy: HTTPS + mật khẩu + lọc IP |
-| [`migrate-mail.service`](migrate-mail.service) | Chạy dashboard như dịch vụ systemd |
+| [`postboat.service`](postboat.service) | Chạy dashboard như dịch vụ systemd |
 
 ---
 
@@ -100,14 +100,14 @@ Cổng 80 cần cho Let's Encrypt xác thực và cho việc chuyển hướng s
 Tạo user riêng và đặt tool vào `/opt`:
 
 ```bash
-useradd -r -s /usr/sbin/nologin migrate && chown -R migrate: /opt/migrate-mail
+useradd -r -s /usr/sbin/nologin migrate && chown -R migrate: /opt/postboat
 ```
 
-Copy `migrate-mail.service` sang `/etc/systemd/system/`, sửa `User=` và
+Copy `postboat.service` sang `/etc/systemd/system/`, sửa `User=` và
 `WorkingDirectory=` cho khớp, rồi:
 
 ```bash
-systemctl daemon-reload && systemctl enable --now migrate-mail
+systemctl daemon-reload && systemctl enable --now postboat
 ```
 
 > Nếu tool nằm trong `/home/...` thì phải bỏ dòng `ProtectHome=read-only`,
@@ -131,7 +131,7 @@ systemctl reload caddy
 Token in ra lúc dashboard khởi động:
 
 ```bash
-journalctl -u migrate-mail | grep '?t='
+journalctl -u postboat | grep '?t='
 ```
 
 Nó in ra địa chỉ dạng `http://127.0.0.1:8765/?t=<token>`. Giữ nguyên phần
@@ -144,7 +144,7 @@ https://mm.congty.vn/?t=<token>
 Token dùng một lần để đặt cookie rồi biến khỏi thanh địa chỉ. Mất token thì:
 
 ```bash
-systemctl restart migrate-mail
+systemctl restart postboat
 ```
 
 Token mới sinh mỗi lần khởi động — và đó cũng là cách đóng cửa nhanh nhất nếu
@@ -177,14 +177,14 @@ Một dashboard mở ra Internet mà không ai còn dùng là một cánh cửa 
 nhìn. Cuộc migrate xong thì:
 
 ```bash
-systemctl disable --now migrate-mail caddy
+systemctl disable --now postboat caddy
 ```
 
 Rồi xoá `users.csv` — nó chứa mật khẩu hộp thư của khách và không còn việc gì
 nữa:
 
 ```bash
-shred -u /opt/migrate-mail/users.csv
+shred -u /opt/postboat/users.csv
 ```
 
 Log và báo cáo giữ lại được: chúng không chứa mật khẩu.

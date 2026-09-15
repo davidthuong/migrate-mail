@@ -32,7 +32,7 @@ import sys
 def utf7_decode(name):
     """&xxx- -> chu that. Du de doc bang mat, khong can hoan hao.
 
-    Khong goi migrate_mail.imaputf7: neu ca hai ben cung sai mot kieu thi so
+    Khong goi postboat.imaputf7: neu ca hai ben cung sai mot kieu thi so
     dem se khop trong khi thuc te lech.
     """
     out = []

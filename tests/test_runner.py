@@ -11,14 +11,14 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import providers, runner
-from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config,
+from postboat import providers, runner
+from postboat.config import (MASTER_AUTHZID, MASTER_SEPARATOR, Config,
                                  MasterConf, Paths, ServerConf, SyncConf)
-from migrate_mail.discover import _parse_list_line, build_plan
-from migrate_mail.providers import AUTH_MASTER
-from migrate_mail.runner import (MODE_DRY, MODE_SYNC, build_command, flags_used,
+from postboat.discover import _parse_list_line, build_plan
+from postboat.providers import AUTH_MASTER
+from postboat.runner import (MODE_DRY, MODE_SYNC, build_command, flags_used,
                                  logins_for, parse_output, _redact, _write_secret)
-from migrate_mail.users import User
+from postboat.users import User
 
 from test_discover import GMAIL_EN, parse
 
@@ -372,7 +372,7 @@ class TestDeclaredOptions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "imapsync"
             p.write_text(text, encoding="utf-8")
-            from migrate_mail.runner import declared_options
+            from postboat.runner import declared_options
             return declared_options(str(p))
 
     def test_reads_plain_options(self):
@@ -400,7 +400,7 @@ class TestDeclaredOptions(unittest.TestCase):
         self.assertNotIn("filterflagsX", opts)
 
     def test_unreadable_file_gives_empty_set(self):
-        from migrate_mail.runner import declared_options
+        from postboat.runner import declared_options
         self.assertEqual(declared_options("/khong/ton/tai/imapsync"), set())
 
 
@@ -411,7 +411,7 @@ class TestUnsupportedFlags(unittest.TestCase):
     """
 
     def check(self, script_text, flags):
-        import migrate_mail.runner as R
+        import postboat.runner as R
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "imapsync"
             p.write_text(script_text, encoding="utf-8")
@@ -444,7 +444,7 @@ class TestFoldersOnlyMode(unittest.TestCase):
     """
 
     def build_folders(self):
-        from migrate_mail.runner import MODE_FOLDERS
+        from postboat.runner import MODE_FOLDERS
         return build(mode=MODE_FOLDERS)
 
     def test_uses_justfolders(self):
@@ -486,7 +486,7 @@ Exiting with return value 0 (EX_OK: successful termination)
 
 class TestSizesMode(unittest.TestCase):
     def build_sizes(self):
-        from migrate_mail.runner import MODE_SIZES
+        from postboat.runner import MODE_SIZES
         return build(mode=MODE_SIZES)
 
     def test_asks_imapsync_for_folder_sizes(self):
@@ -522,7 +522,7 @@ class TestDaysNeeded(unittest.TestCase):
     LIMIT = providers.GMAIL.daily_limit
 
     def days(self, n, limit=None):
-        from migrate_mail.cli import _days_needed
+        from postboat.cli import _days_needed
         return _days_needed(n, self.LIMIT if limit is None else limit)
 
     def test_empty_mailbox(self):
@@ -605,7 +605,7 @@ class TestStopAll(unittest.TestCase):
         Neu quen go, lan Ctrl-C sau se gui tin hieu vao mot PID da chet -- ma
         PID thi duoc cap lai, nen co ngay ban nham tien trinh khac.
         """
-        tmp = Path(tempfile.mkdtemp(prefix="mmtest-stopall-"))
+        tmp = Path(tempfile.mkdtemp(prefix="pbtest-stopall-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         fake = Path(__file__).resolve().parent / "fake_imapsync.py"
         cfg = make_cfg()

@@ -13,11 +13,11 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import oauth, providers
-from migrate_mail.config import Config, Paths, ServerConf, SyncConf
-from migrate_mail.oauth import OAuthConf, OAuthError, TokenSource
-from migrate_mail.runner import MODE_SYNC, _redact, build_command
-from migrate_mail.users import User
+from postboat import oauth, providers
+from postboat.config import Config, Paths, ServerConf, SyncConf
+from postboat.oauth import OAuthConf, OAuthError, TokenSource
+from postboat.runner import MODE_SYNC, _redact, build_command
+from postboat.users import User
 
 CONF = OAuthConf(tenant="contoso.onmicrosoft.com", client_id="abc",
                  client_secret="s3cret")
@@ -49,14 +49,14 @@ class TestConf(unittest.TestCase):
 
 class TestRequestToken(unittest.TestCase):
     def test_returns_token_and_lifetime(self):
-        with mock.patch("migrate_mail.oauth.urllib.request.urlopen",
+        with mock.patch("postboat.oauth.urllib.request.urlopen",
                         return_value=_response({"access_token": "T", "expires_in": 3599})):
             token, expires = oauth.request_token(CONF)
         self.assertEqual(token, "T")
         self.assertEqual(expires, 3599)
 
     def test_sends_client_credentials_grant(self):
-        with mock.patch("migrate_mail.oauth.urllib.request.urlopen",
+        with mock.patch("postboat.oauth.urllib.request.urlopen",
                         return_value=_response({"access_token": "T"})) as call:
             oauth.request_token(CONF)
         body = call.call_args[0][0].data.decode()
@@ -77,13 +77,13 @@ class TestRequestToken(unittest.TestCase):
         }).encode()
         err = urllib.error.HTTPError("http://x", 401, "Unauthorized", {},
                                      io.BytesIO(payload))
-        with mock.patch("migrate_mail.oauth.urllib.request.urlopen", side_effect=err):
+        with mock.patch("postboat.oauth.urllib.request.urlopen", side_effect=err):
             with self.assertRaises(OAuthError) as ctx:
                 oauth.request_token(CONF)
         self.assertIn("AADSTS7000215", str(ctx.exception))
 
     def test_reply_without_a_token_is_an_error(self):
-        with mock.patch("migrate_mail.oauth.urllib.request.urlopen",
+        with mock.patch("postboat.oauth.urllib.request.urlopen",
                         return_value=_response({"token_type": "Bearer"})):
             with self.assertRaises(OAuthError):
                 oauth.request_token(CONF)
@@ -181,7 +181,7 @@ class TestCommandLine(unittest.TestCase):
         self.assertIn("<passfile>", redacted)
 
     def test_doctor_only_checks_oauth_flags_when_oauth_is_used(self):
-        from migrate_mail.runner import flags_used
+        from postboat.runner import flags_used
         from test_runner import make_cfg
         self.assertIn("--oauthaccesstoken1", flags_used(oauth_cfg()))
         self.assertNotIn("--oauthaccesstoken1", flags_used(make_cfg()))
@@ -193,11 +193,11 @@ class TestVersionGate(unittest.TestCase):
     nen doctor phai nhin ca so phien ban."""
 
     def check(self, version_text):
-        from migrate_mail import cli
+        from postboat import cli
         lines = []
-        with mock.patch("migrate_mail.runner.imapsync_run", return_value=version_text), \
-             mock.patch("migrate_mail.cli.check_permissions", return_value=""), \
-             mock.patch("migrate_mail.oauth.request_token", return_value=("T", 3600)), \
+        with mock.patch("postboat.runner.imapsync_run", return_value=version_text), \
+             mock.patch("postboat.cli.check_permissions", return_value=""), \
+             mock.patch("postboat.oauth.request_token", return_value=("T", 3600)), \
              cli.capture(lines.append):
             problems = cli._check_oauth(oauth_cfg())
         return problems, "\n".join(lines)
@@ -213,7 +213,7 @@ class TestVersionGate(unittest.TestCase):
         self.assertIn("lay duoc token", out)
 
     def test_password_auth_skips_the_check_entirely(self):
-        from migrate_mail import cli
+        from postboat import cli
         from test_runner import make_cfg
         lines = []
         with cli.capture(lines.append):
@@ -227,7 +227,7 @@ class TestTokenFileStaysFresh(unittest.TestCase):
 
     def test_refresher_rewrites_the_file_while_the_run_is_going(self):
         import tempfile
-        from migrate_mail import runner
+        from postboat import runner
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "src.token"
@@ -250,7 +250,7 @@ class TestTokenFileStaysFresh(unittest.TestCase):
         """Mot lan goi mang hong khong duoc phep lam hong ca lan sync -- ban
         token dang nam tren dia van con dung duoc them mot luc."""
         import tempfile
-        from migrate_mail import runner
+        from postboat import runner
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "src.token"
@@ -266,7 +266,7 @@ class TestTokenFileStaysFresh(unittest.TestCase):
         """Ghi de bang xoa-roi-tao-lai se de lo mot khoang file khong ton tai;
         imapsync doc dung luc do se that bai xac thuc."""
         import tempfile
-        from migrate_mail.runner import _write_secret
+        from postboat.runner import _write_secret
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "src.token"
@@ -279,7 +279,7 @@ class TestTokenFileStaysFresh(unittest.TestCase):
                 seen.append(Path(dst).exists())
                 return real_replace(src, dst)
 
-            with mock.patch("migrate_mail.runner.os.replace", watching_replace):
+            with mock.patch("postboat.runner.os.replace", watching_replace):
                 _write_secret(path, "hai")
             self.assertEqual(seen, [True])       # file cu van con luc doi cho
             self.assertEqual(path.read_text(encoding="utf-8"), "hai")

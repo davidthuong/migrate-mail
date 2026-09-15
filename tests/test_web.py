@@ -22,8 +22,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from migrate_mail import web
-from migrate_mail.config import load_config
+from postboat import web
+from postboat.config import load_config
 
 from test_cli import CONFIG, USERS, no_dest_namespace, quote
 from test_discover import GMAIL_EN, parse
@@ -33,7 +33,7 @@ FAKE = HERE / "fake_imapsync.py"
 
 def fake_folders(cfg, user, side="source", timeout=60):
     if "loi" in user.src_user:
-        from migrate_mail.discover import DiscoveryError
+        from postboat.discover import DiscoveryError
         raise DiscoveryError("login that bai")
     return parse(GMAIL_EN)
 
@@ -44,9 +44,9 @@ class WebTestCase(unittest.TestCase):
     users_text = USERS
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmweb-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbweb-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        patcher = mock.patch("migrate_mail.discover.server_layout",
+        patcher = mock.patch("postboat.discover.server_layout",
                              side_effect=no_dest_namespace)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -76,7 +76,7 @@ class WebTestCase(unittest.TestCase):
     def get(self, path, token=True):
         req = urllib.request.Request(self.url(path))
         if token:
-            req.add_header("Cookie", "mmtoken=" + self.token)
+            req.add_header("Cookie", "pbtoken=" + self.token)
         return urllib.request.urlopen(req, timeout=10)
 
     def post(self, path, payload, token=True):
@@ -84,7 +84,7 @@ class WebTestCase(unittest.TestCase):
             self.url(path), data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}, method="POST")
         if token:
-            req.add_header("Cookie", "mmtoken=" + self.token)
+            req.add_header("Cookie", "pbtoken=" + self.token)
         return urllib.request.urlopen(req, timeout=30)
 
     def state(self, attempts=4):
@@ -109,7 +109,7 @@ class TestAuth(WebTestCase):
 
     def test_api_refuses_wrong_token(self):
         req = urllib.request.Request(self.url("/api/state"))
-        req.add_header("Cookie", "mmtoken=sai-token")
+        req.add_header("Cookie", "pbtoken=sai-token")
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(req, timeout=10)
         self.assertEqual(ctx.exception.code, 401)
@@ -133,7 +133,7 @@ class TestAuth(WebTestCase):
 
     def test_page_served_with_cookie(self):
         body = self.get("/").read().decode("utf-8")
-        self.assertIn("migrate-mail", body)
+        self.assertIn("Postboat", body)
         self.assertIn("<table>", body)
 
     def test_token_in_query_sets_cookie_and_redirects(self):
@@ -148,7 +148,7 @@ class TestAuth(WebTestCase):
         except urllib.error.HTTPError as exc:
             self.assertEqual(exc.code, 302)
             self.assertEqual(exc.headers.get("Location"), "/")
-            self.assertIn("mmtoken=" + self.token, exc.headers.get("Set-Cookie"))
+            self.assertIn("pbtoken=" + self.token, exc.headers.get("Set-Cookie"))
             self.assertIn("HttpOnly", exc.headers.get("Set-Cookie"))
 
     def test_post_refuses_without_token(self):
@@ -192,7 +192,7 @@ class TestState(WebTestCase):
 
 class TestRunJob(WebTestCase):
     def run_action(self, action, only=None):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.post("/api/run", {"action": action, "only": only or []})
             for _ in range(200):
                 job = self.state()["job"]
@@ -306,7 +306,7 @@ class TestAddUser(WebTestCase):
         self.post("/api/users", {
             "src_user": "moi@cu.com", "src_password": "aaaa bbbb cccc dddd",
             "dst_user": "moi@moi.vn", "dst_password": "MatKhauMoi"})
-        from migrate_mail.users import load_users
+        from postboat.users import load_users
         u = [x for x in load_users(self.users_path) if x.src_user == "moi@cu.com"][0]
         self.assertEqual(u.src_password, "aaaabbbbccccdddd")   # khoang trang da bo
         self.assertEqual(u.dst_user, "moi@moi.vn")
@@ -366,7 +366,7 @@ class TestAddUserWithMasterDest(WebTestCase):
         self.post("/api/users", {
             "src_user": "moi@cu.com", "src_password": "aaaabbbbccccdddd",
             "dst_user": "moi@moi.vn"})
-        from migrate_mail.users import load_users
+        from postboat.users import load_users
         users = load_users(self.users_path, need_dst_password=False)
         u = [x for x in users if x.src_user == "moi@cu.com"][0]
         self.assertEqual(u.dst_user, "moi@moi.vn")
@@ -414,7 +414,7 @@ class TestOutputRouting(WebTestCase):
     def test_result_table_reaches_the_job_not_stdout(self):
         buf = io.StringIO()
         from contextlib import redirect_stdout
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             with redirect_stdout(buf):
                 self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
                 for _ in range(200):
@@ -430,7 +430,7 @@ class TestOutputRouting(WebTestCase):
 
 class TestNoteColumn(WebTestCase):
     def test_successful_row_has_no_exit_noise(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
             for _ in range(200):
                 job = self.state()["job"]
@@ -442,7 +442,7 @@ class TestNoteColumn(WebTestCase):
         self.assertEqual(box["ghi_chu"], "")
 
     def test_failed_row_keeps_its_reason(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.post("/api/run", {"action": "sync", "only": ["fail.chi@cu.com"]})
             for _ in range(200):
                 job = self.state()["job"]
@@ -462,7 +462,7 @@ class TestConfigReload(WebTestCase):
         (self.tmp / "config.ini").write_text(text, encoding="utf-8")
 
     def run_once(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
             for _ in range(200):
                 job = self.state()["job"]
@@ -499,7 +499,7 @@ class TestRemoveUser(WebTestCase):
 
     def test_leaves_other_rows_untouched(self):
         self.remove("binh@cu.com")
-        from migrate_mail.users import load_users
+        from postboat.users import load_users
         rest = load_users(self.users_path)
         self.assertEqual([u.src_user for u in rest], ["an@cu.com", "fail.chi@cu.com"])
         self.assertEqual(rest[0].src_password, "aaaabbbbccccdddd")   # con nguyen
@@ -540,7 +540,7 @@ class TestRemoveUser(WebTestCase):
 
     def test_does_not_touch_state_or_logs(self):
         """Mail da chuyen va log la du lieu -- xoa khoi danh sach khong xoa chung."""
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.post("/api/run", {"action": "sync", "only": ["an@cu.com"]})
             for _ in range(200):
                 job = self.state()["job"]
@@ -577,7 +577,7 @@ class TestPageScript(unittest.TestCase):
     """
 
     def script_source(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         start = PAGE.index("<script>") + len("<script>")
         return PAGE[start:PAGE.index("</script>", start)]
 
@@ -605,7 +605,7 @@ class TestPageScript(unittest.TestCase):
         $("id") tra ve null cho id khong co, va JS chi hong luc chay -- moi
         test Python van xanh. Bat luc doc file thay vi luc nguoi dung mo trang.
         """
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         wanted = set(re.findall(r'\$\("([a-z0-9-]+)"\)', self.script_source()))
         self.assertTrue(wanted, "khong doc duoc id nao tu script")
         present = set(re.findall(r'id="([a-z0-9-]+)"', PAGE))
@@ -638,13 +638,13 @@ class TestActionTable(unittest.TestCase):
         self.assertEqual(set(web.ACTIONS), set(web._ACTION_FN))
 
     def test_every_button_on_the_page_is_a_known_action(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         acts = set(re.findall(r'data-act="([a-z-]+)"', PAGE))
         self.assertTrue(acts, "khong doc duoc nut nao tu trang")
         self.assertEqual(acts - set(web.ACTIONS), set())
 
     def test_resume_has_a_button(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         self.assertIn('data-act="resume"', PAGE)
 
 
@@ -704,7 +704,7 @@ class TestAddUserKeepsTheFileReadable(WebTestCase):
         self.post("/api/users", {"src_user": "moi@cu.vn",
                                  "dst_user": "moi@moi.vn",
                                  "dst_password": "MatKhauMoi"})
-        from migrate_mail.users import load_users
+        from postboat.users import load_users
         users = load_users(self.users_path, need_src_password=False)
         moi = [u for u in users if u.src_user == "moi@cu.vn"]
         self.assertEqual(len(moi), 1, self.users_path.read_text(encoding="utf-8"))
@@ -746,13 +746,13 @@ class TestPageStructure(unittest.TestCase):
         """Handler thanh cong ghi de len #addstatus. Neu #usersfile nam trong
         do thi textContent xoa no, roi refresh() nem TypeError va vong cap
         nhat chet han -- dashboard dung hinh khong mot loi bao."""
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         start = PAGE.index('id="addstatus"')
         end = PAGE.index("</div>", start)
         self.assertNotIn("usersfile", PAGE[start:end])
 
     def test_refresh_goi_schedule_du_phia_tren_hong(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         body = PAGE[PAGE.index("async function refresh()"):]
         body = body[:body.index("\n}")]
         self.assertIn("catch", body)
@@ -762,7 +762,7 @@ class TestPageStructure(unittest.TestCase):
     def test_nhan_form_noi_ro_nguon_hay_dich(self):
         """cPanel -> cPanel la ca hay gap nhat cua mot nha cung cap; luc do
         ten provider khong phan biet duoc o nao la dau nao."""
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         for label in ('$("lb-src")', '$("lb-dst")', '$("lb-dstpass")'):
             line = [l for l in PAGE.splitlines() if label in l and "textContent" in l]
             self.assertTrue(line, label)
@@ -781,7 +781,7 @@ class TestPreflightShowsInTheTable(WebTestCase):
     """
 
     def _save(self, **users):
-        from migrate_mail.report import save_preflight
+        from postboat.report import save_preflight
         statedir = self.tmp / "state"
         save_preflight(statedir, [
             (name, ok_src, msg_src, ok_dst, msg_dst)
@@ -840,7 +840,7 @@ class TestPreflightBadgeRules(unittest.TestCase):
     """Quy tac hien cot KET QUA, doc thang tu trang."""
 
     def setUp(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         self.badge = PAGE[PAGE.index("function badge("):]
         self.badge = self.badge[:self.badge.index("\n}")]
 
@@ -866,10 +866,10 @@ class TestSideNamesAreAccented(unittest.TestCase):
     """
 
     def test_may_chu_tra_ve_danh_sach_chu_khong_ghep_san(self):
-        from migrate_mail.web import _preflight_row
-        from migrate_mail.config import load_config
+        from postboat.web import _preflight_row
+        from postboat.config import load_config
         import tempfile as tf
-        tmp = Path(tf.mkdtemp(prefix="mmside-"))
+        tmp = Path(tf.mkdtemp(prefix="pbside-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         (tmp / "config.ini").write_text(CONFIG.format(imapsync="imapsync"),
                                         encoding="utf-8")
@@ -879,7 +879,7 @@ class TestSideNamesAreAccented(unittest.TestCase):
         self.assertEqual(row["hong"], ["nguon", "dich"])
 
     def test_trang_doi_sang_co_dau(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         self.assertIn('nguon: "nguồn"', PAGE)
         self.assertIn('dich: "đích"', PAGE)
 
@@ -904,7 +904,7 @@ class TestBannerReachesAPipe(unittest.TestCase):
     no nam do MAI MAI.
 
     Hau qua khong phai "thieu mot dong log": token nam trong khoi chu do, nen
-    nguoi chay `nohup ./mm.py web > web.log &` mat luon duong vao dashboard
+    nguoi chay `nohup ./postboat.py web > web.log &` mat luon duong vao dashboard
     cua chinh minh, trong khi tu ben ngoai nhin thi moi thu deu binh thuong.
 
     Test chay that mot tien trinh con voi stdout la PIPE -- dung dieu kien lam
@@ -912,14 +912,14 @@ class TestBannerReachesAPipe(unittest.TestCase):
     """
 
     def test_token_hien_ra_ngay_khi_stdout_la_ong_dan(self):
-        tmp = Path(tempfile.mkdtemp(prefix="mmbanner-"))
+        tmp = Path(tempfile.mkdtemp(prefix="pbbanner-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         (tmp / "config.ini").write_text(CONFIG.format(imapsync="imapsync"),
                                         encoding="utf-8")
         (tmp / "users.csv").write_text(USERS, encoding="utf-8")
 
         proc = subprocess.Popen(
-            [sys.executable, str(HERE.parent / "mm.py"),
+            [sys.executable, str(HERE.parent / "postboat.py"),
              "--config", str(tmp / "config.ini"),
              "--users", str(tmp / "users.csv"),
              "web", "--port", str(_free_port())],
@@ -955,6 +955,6 @@ class TestBannerReachesAPipe(unittest.TestCase):
         say() da co flush=True san. Loi tren xay ra dung vi cho nay di vong
         qua no.
         """
-        src = (HERE.parent / "migrate_mail" / "web.py").read_text(encoding="utf-8")
+        src = (HERE.parent / "postboat" / "web.py").read_text(encoding="utf-8")
         self.assertIsNone(re.search(r"(?<![.\w])print\(", src),
                           "web.py dung print() tran; dung cli.say() de co flush")

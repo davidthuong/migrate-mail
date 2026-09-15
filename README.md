@@ -1,7 +1,11 @@
-# migrate-mail
+# Postboat
 
 Tool migrate mailbox **từ nhà cung cấp mail này sang nhà cung cấp khác**, dựng
 trên nền [imapsync](https://github.com/imapsync/imapsync).
+
+> *Packet boat* là loại tàu chuyên chở thư giữa các cảng: chậm, không hào
+> nhoáng, chở hết những gì được giao, và cập bến kèm chứng từ. Tool này làm
+> đúng việc đó.
 
 Nguồn được hỗ trợ sẵn: Gmail / Google Workspace, Microsoft 365 / Exchange
 Online, Exchange tự dựng, cPanel / DirectAdmin / Plesk (Dovecot), Courier,
@@ -15,8 +19,8 @@ báo cáo đọc được.
 Chỉ dùng thư viện chuẩn của Python 3 — không cần `pip install` gì cả.
 
 ```bash
-python3 mm.py providers          # xem danh sách nguồn và việc phải chuẩn bị
-python3 mm.py providers m365     # xem chi tiết một nguồn
+python3 postboat.py providers          # xem danh sách nguồn và việc phải chuẩn bị
+python3 postboat.py providers m365     # xem chi tiết một nguồn
 ```
 
 ---
@@ -58,8 +62,8 @@ lại lệnh nhưng che đường dẫn các file đó.
 ## Cài trên VPS
 
 ```bash
-git clone <repo> migrate-mail && cd migrate-mail
-chmod +x install.sh mm.py
+git clone <repo> postboat && cd postboat
+chmod +x install.sh postboat.py
 sudo ./install.sh
 ```
 
@@ -91,7 +95,7 @@ provider = gmail        ; hoặc m365, dovecot, zimbra, courier, yahoo, zoho, ic
 ```
 
 `provider` quyết định ba thứ: host mặc định, cách nhận ra folder đặc biệt, và
-folder nào không phải mail nên bỏ qua. Chạy `python3 mm.py providers <tên>` để
+folder nào không phải mail nên bỏ qua. Chạy `python3 postboat.py providers <tên>` để
 xem việc phải chuẩn bị cho từng nguồn. Dưới đây là phần cần đọc kỹ.
 
 ### Gmail / Google Workspace
@@ -154,7 +158,7 @@ oauth_client_secret_file = oauth-secret.txt
 Để secret ra file riêng (`chmod 600`) thì `config.ini` vẫn còn backup/gửi đi
 được. Cột `src_password` trong `users.csv` khi đó **để trống**.
 
-`python3 mm.py doctor` sẽ thật sự gọi Microsoft xin token và in mã `AADSTS` nếu
+`python3 postboat.py doctor` sẽ thật sự gọi Microsoft xin token và in mã `AADSTS` nếu
 bị từ chối — đó là cách nhanh nhất biết secret hết hạn hay thiếu consent.
 
 > OAuth2 cần **imapsync 2.251 trở lên**. Tuỳ chọn `--oauthaccesstoken1` có
@@ -467,7 +471,7 @@ Get-Mailbox -ResultSize Unlimited | Select-Object PrimarySmtpAddress,DisplayName
 Rồi đưa file đó cho `mkusers`:
 
 ```bash
-python3 mm.py mkusers mailboxes.csv --dst-domain congty.vn
+python3 postboat.py mkusers mailboxes.csv --dst-domain congty.vn
 ```
 
 ```
@@ -552,15 +556,15 @@ vậy mới kiểm được phần đổi tên folder.
 ```bash
 U=an.nguyen@congty-cu.com
 
-python3 mm.py doctor                      # 1. môi trường
-python3 mm.py preflight --only $U         # 2. đăng nhập được cả hai đầu
-python3 mm.py discover  --only $U         # 3. folder bên nguồn + kế hoạch chuyển
-python3 mm.py discover  --dest --only $U  # 4. folder thật bên đích
-python3 mm.py sync --sizes --only $U       # 5. đo dung lượng, ước lượng số ngày
-python3 mm.py sync --folders-only --only $U   # 6. tạo cây folder, chưa chuyển mail
-python3 mm.py sync --dry --only $U        # 7. chạy khan, không ghi gì
-python3 mm.py sync      --only $U         # 8. chạy thật
-python3 mm.py verify    --only $U         # 9. kiểm chứng ngày tháng
+python3 postboat.py doctor                      # 1. môi trường
+python3 postboat.py preflight --only $U         # 2. đăng nhập được cả hai đầu
+python3 postboat.py discover  --only $U         # 3. folder bên nguồn + kế hoạch chuyển
+python3 postboat.py discover  --dest --only $U  # 4. folder thật bên đích
+python3 postboat.py sync --sizes --only $U       # 5. đo dung lượng, ước lượng số ngày
+python3 postboat.py sync --folders-only --only $U   # 6. tạo cây folder, chưa chuyển mail
+python3 postboat.py sync --dry --only $U        # 7. chạy khan, không ghi gì
+python3 postboat.py sync      --only $U         # 8. chạy thật
+python3 postboat.py verify    --only $U         # 9. kiểm chứng ngày tháng
 ```
 
 **Vì sao có bước 6.** imapsync không mô phỏng được một folder chưa tồn tại bên
@@ -683,7 +687,7 @@ Xong bước này, chạy phần còn lại bỏ `--only` đi là được.
 ### 1. `doctor` — kiểm tra môi trường
 
 ```bash
-python3 mm.py doctor
+python3 postboat.py doctor
 ```
 
 Kiểm tra imapsync chạy được, `users.csv` parse được, thư mục ghi được. Có một
@@ -700,7 +704,7 @@ lúc 2 giờ sáng.
 ### 2. `preflight` — thử đăng nhập cả hai đầu
 
 ```bash
-python3 mm.py preflight
+python3 postboat.py preflight
 ```
 
 Đăng nhập IMAP cả hai đầu cho từng dòng trong CSV. Đây là bước bắt lỗi
@@ -709,7 +713,7 @@ sai mật khẩu, thiếu tài khoản, sai domain — rẻ và nhanh. Chạy n�
 ### 3. `discover` — xem kế hoạch chuyển đổi
 
 ```bash
-python3 mm.py discover
+python3 postboat.py discover
 ```
 
 In ra folder nào bị **bỏ qua**, folder nào **đổi tên**, folder nào **giữ nguyên**,
@@ -722,7 +726,7 @@ hộp thư sẽ có hai folder cùng công dụng nhưng khác tên.
 ### 4. `sync --dry` — chạy thử
 
 ```bash
-python3 mm.py sync --dry
+python3 postboat.py sync --dry
 ```
 
 imapsync duyệt hết mọi thứ nhưng không ghi gì vào server đích. Xác nhận số lượng mail
@@ -731,7 +735,7 @@ khớp với mong đợi trước khi chạy thật.
 ### 5. `sync` — chạy thật
 
 ```bash
-python3 mm.py sync
+python3 postboat.py sync
 ```
 
 Chạy được, dừng được, chạy lại được. imapsync bỏ qua mail đã có bên đích nên
@@ -752,13 +756,13 @@ Dùng `screen` hoặc `tmux` — lần chạy đầu có thể kéo dài nhiều
 
 ```bash
 tmux new -s migrate
-python3 mm.py sync
+python3 postboat.py sync
 ```
 
 ### 6. `verify` — kiểm chứng ngày tháng
 
 ```bash
-python3 mm.py verify
+python3 postboat.py verify
 ```
 
 Đọc `INTERNALDATE` thật ở cả hai đầu, ghép theo `Message-Id`, rồi so. Chạy sau
@@ -807,7 +811,7 @@ và phần không giao nhau bị báo nhầm là thiếu.
 Ngày đổi MX, chạy vòng delta để nhặt mail mới về sau lần sync đầu:
 
 ```bash
-python3 mm.py sync --since-days 7
+python3 postboat.py sync --since-days 7
 ```
 
 Sau khi MX đã trỏ về IceWarp và đã ổn định, chạy thêm một lần nữa để nhặt nốt
@@ -858,7 +862,7 @@ Gmail → IceWarp không dính, và tool không dùng preset đó.
 ### Kiểm chứng thay vì tin
 
 ```bash
-python3 mm.py verify --only an.nguyen@congty-cu.com
+python3 postboat.py verify --only an.nguyen@congty-cu.com
 ```
 
 Đọc `INTERNALDATE` thật ở cả hai đầu, ghép theo `Message-Id`, so từng cái. Múi
@@ -948,7 +952,7 @@ Nguồn: [Gmail bandwidth limits — Google Workspace Admin Help](https://knowle
 Theo dõi 20 mailbox bằng terminal thì khó nhìn. Có giao diện web:
 
 ```bash
-python3 mm.py web
+python3 postboat.py web
 ```
 
 Nó in ra một địa chỉ kèm token. Vì giao diện này **chạm vào mật khẩu**, mặc định
@@ -1028,10 +1032,10 @@ Mỗi lần `sync` sinh ra:
 | `state/runs/<thời-điểm>.json` | Để lệnh `report` đọc lại |
 
 ```bash
-python3 mm.py report              # xem lại lần chạy gần nhất
-python3 mm.py report --all        # gộp tất cả: dòng mới nhất của từng mailbox
-python3 mm.py report --list       # liệt kê các lần đã chạy
-python3 mm.py report --all --out bao-cao.html
+python3 postboat.py report              # xem lại lần chạy gần nhất
+python3 postboat.py report --all        # gộp tất cả: dòng mới nhất của từng mailbox
+python3 postboat.py report --list       # liệt kê các lần đã chạy
+python3 postboat.py report --all --out bao-cao.html
 ```
 
 **Báo cáo cho sếp thì dùng `--all`.** Mỗi file run chỉ chứa những mailbox của
@@ -1075,9 +1079,9 @@ chạy cũ mất gợi ý (số liệu vẫn còn), và tool quay về dùng g�
 thì thứ đưa cho khách là một cái khác:
 
 ```bash
-python3 mm.py handover
-python3 mm.py handover --customer "Công ty CP Kỹ thuật Phương Nam"
-python3 mm.py handover --out bien-ban.html
+python3 postboat.py handover
+python3 postboat.py handover --customer "Công ty CP Kỹ thuật Phương Nam"
+python3 postboat.py handover --out bien-ban.html
 ```
 
 Ra một file HTML một trang, mở bằng trình duyệt rồi in ra PDF để ký. Nó luôn
@@ -1104,7 +1108,7 @@ không có vấn đề gì, trong khi thật ra chưa ai kiểm cả. Muốn có
 `verify` trước rồi xuất lại:
 
 ```bash
-python3 mm.py verify && python3 mm.py handover
+python3 postboat.py verify && python3 postboat.py handover
 ```
 
 **Mục "Không thuộc phạm vi" luôn in ra**, kể cả khi khách không hỏi. Nói trước
@@ -1126,13 +1130,13 @@ dòng gạch để điền tay, biên bản vẫn ra được.
 ## Các lệnh khác
 
 ```bash
-python3 mm.py providers                            # nguồn/đích được hỗ trợ
-python3 mm.py providers dovecot                    # chi tiết một cái
-python3 mm.py mkusers mailboxes.csv                # sinh users.csv từ Get-Mailbox
-python3 mm.py sync --only an@cu.com,binh@cu.com   # chỉ vài mailbox
-python3 mm.py sync --resume                        # bỏ qua mailbox đã xong
-python3 mm.py sync --workers 5                     # ghi đè số luồng song song
-python3 mm.py sync --since-days 3                  # chỉ mail mới hơn 3 ngày
+python3 postboat.py providers                            # nguồn/đích được hỗ trợ
+python3 postboat.py providers dovecot                    # chi tiết một cái
+python3 postboat.py mkusers mailboxes.csv                # sinh users.csv từ Get-Mailbox
+python3 postboat.py sync --only an@cu.com,binh@cu.com   # chỉ vài mailbox
+python3 postboat.py sync --resume                        # bỏ qua mailbox đã xong
+python3 postboat.py sync --workers 5                     # ghi đè số luồng song song
+python3 postboat.py sync --since-days 3                  # chỉ mail mới hơn 3 ngày
 ```
 
 `providers` chạy được cả khi chưa có `config.ini` — cần biết điền gì vào
@@ -1237,8 +1241,8 @@ extra_args = --regextrans2 s,^(?!INBOX|Sent|Drafts|Trash|Spam),Gmail/$1,
 ## Cấu trúc mã nguồn
 
 ```
-mm.py                      điểm vào
-migrate_mail/
+postboat.py                      điểm vào
+postboat/
   providers.py             hồ sơ từng nhà cung cấp: folder, hạn mức, chuẩn bị
   oauth.py                 lấy và làm mới OAuth2 token của Microsoft
   config.py                đọc config.ini

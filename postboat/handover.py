@@ -212,7 +212,7 @@ def _verify_section(verify_users: Dict[str, dict]) -> str:
             "<h2>Đối chiếu ngày tháng</h2>"
             '<p class="note">Chưa chạy bước đối chiếu, nên báo cáo này không '
             "kết luận gì về ngày tháng của thư sau khi chuyển. Chạy "
-            "<code>mm.py verify</code> rồi xuất lại báo cáo nếu cần hạng mục "
+            "<code>postboat.py verify</code> rồi xuất lại báo cáo nếu cần hạng mục "
             "này trong biên bản.</p>")
 
     users = [verify_users[k] for k in sorted(verify_users)]

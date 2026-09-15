@@ -78,7 +78,7 @@ printf '%s\n' \
   'distinguished_name = dn' \
   'x509_extensions = ca_ext' \
   '[dn]' \
-  'CN = migrate-mail tlsprobe CA' \
+  'CN = Postboat tlsprobe CA' \
   '[ca_ext]' \
   'basicConstraints = critical,CA:TRUE' \
   'keyUsage = critical,keyCertSign' > "$DIR/ca.cnf"
@@ -135,7 +135,7 @@ else { print "TU CHOI: " . ($SSL_ERROR || $! || 'khong ro') . "\n" }
 PERL
 
 cat > "$DIR/client.py" <<'PY'
-# Nua Python cua tool -- giong het migrate_mail/discover.py:ssl_context().
+# Nua Python cua tool -- giong het postboat/discover.py:ssl_context().
 import socket
 import ssl
 import sys

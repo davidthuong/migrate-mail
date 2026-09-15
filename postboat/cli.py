@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Giao dien dong lenh cua migrate-mail."""
+"""Giao dien dong lenh cua postboat."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def _users(args, cfg: Config) -> List[User]:
 def cmd_doctor(args, cfg: Config) -> int:
     problems = 0
 
-    say("migrate-mail %s | Python %s" % (__version__, sys.version.split()[0]))
+    say("postboat %s | Python %s" % (__version__, sys.version.split()[0]))
     say("config      : %s" % cfg.path)
     say("nguon       : %s | %s:%d (ssl=%s, auth=%s)"
         % (cfg.source.provider.name, cfg.source.host, cfg.source.port,
@@ -363,7 +363,7 @@ def cmd_mkusers(args, cfg: Config) -> int:
             say("CANH BAO: %s" % report._wrap(warn, indent=10))
 
     notes = [
-        "Sinh boi mm.py mkusers luc %s" % time.strftime("%Y-%m-%d %H:%M"),
+        "Sinh boi postboat.py mkusers luc %s" % time.strftime("%Y-%m-%d %H:%M"),
         "Nguon danh sach: %s (%d mailbox)" % (label, len(rows)),
         "",
     ]
@@ -398,7 +398,7 @@ def cmd_mkusers(args, cfg: Config) -> int:
             % cfg.source.auth)
         say("khong cho ra mat khau cua user.")
     say("")
-    say("Buoc tiep: ./mm.py preflight")
+    say("Buoc tiep: ./postboat.py preflight")
     return 0
 
 
@@ -780,7 +780,7 @@ def cmd_sync(args, cfg: Config) -> int:
                     say("       CANH BAO: %d folder do chung vao '%s': %s"
                         % (len(sources), utf7_decode(dest),
                            ", ".join(f.display for f in sources)))
-                    say("       Xem './mm.py discover' de biet cach tach rieng.")
+                    say("       Xem './postboat.py discover' de biet cach tach rieng.")
 
     _print_dest_layout(dest_layout, cfg)
 
@@ -1087,7 +1087,7 @@ def cmd_verify(args, cfg: Config) -> int:
             out("  2. Neu co ma van lech, %s dang bo qua ngay trong lenh APPEND."
                 % cfg.dest.provider.name)
             out("     Doi date_source = header trong config.ini roi sync lai mailbox do")
-            out("     bang: ./mm.py sync --only <dia chi>")
+            out("     bang: ./postboat.py sync --only <dia chi>")
             out("  3. Neu van lech, hoi nha cung cap %s ve viec server ghi de"
                 % cfg.dest.provider.name)
             out("     INTERNALDATE luc APPEND.")
@@ -1199,7 +1199,7 @@ def cmd_handover(args, cfg: Config) -> int:
         # Khong chan, nhung phai noi: to giay se ghi ro la chua doi chieu, va
         # do la muc khach doc ky nhat.
         say("  Chua co ket qua verify -- bien ban se ghi ro la chua doi chieu")
-        say("  ngay thang. Chay `mm.py verify` roi xuat lai neu can muc do.")
+        say("  ngay thang. Chay `postboat.py verify` roi xuat lai neu can muc do.")
     if not info.customer:
         say("  Chua khai bao [handover] customer -- o ten khach hang de trong")
         say("  cho dien tay. Xem config.example.ini.")
@@ -1226,7 +1226,7 @@ def cmd_providers(args, cfg: Optional[Config]) -> int:
 
     if not wanted:
         say("Dat gia tri nay vao 'provider =' trong [source] hoac [dest] cua")
-        say("config.ini. Xem chi tiet mot cai: ./mm.py providers <ten>\n")
+        say("config.ini. Xem chi tiet mot cai: ./postboat.py providers <ten>\n")
         say("%-10s %-34s %s" % ("ten", "nha cung cap", "host mac dinh"))
         say("-" * 74)
         for p in chosen:
@@ -1316,7 +1316,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--config", default="config.ini", help="mac dinh: config.ini")
     p.add_argument("--users", default="users.csv", help="mac dinh: users.csv")
-    p.add_argument("--version", action="version", version="migrate-mail " + __version__)
+    p.add_argument("--version", action="version", version="Postboat " + __version__)
     sub = p.add_subparsers(dest="command")
 
     pr = sub.add_parser("providers", help="cac nguon/dich duoc ho tro va cach chuan bi")

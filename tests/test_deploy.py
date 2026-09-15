@@ -22,7 +22,7 @@ DEPLOY = HERE.parent / "deploy"
 class TestDeployFilesExist(unittest.TestCase):
 
     def test_ca_ba_file_deu_con(self):
-        for name in ("Caddyfile", "migrate-mail.service", "README.md"):
+        for name in ("Caddyfile", "postboat.service", "README.md"):
             self.assertTrue((DEPLOY / name).is_file(), name)
 
 

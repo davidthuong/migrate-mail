@@ -41,11 +41,11 @@ jobs:
       - name: Bo test
         run: python -m unittest discover -s tests
 
-      # Khong test nao nap mm.py, trong khi do moi la thu nguoi ta chay that.
+      # Khong test nao nap postboat.py, trong khi do moi la thu nguoi ta chay that.
       # Mot lenh khong can config va khong ra mang la du de biet diem vao con
       # song.
       - name: Diem vao con chay
-        run: python mm.py providers
+        run: python postboat.py providers
 
   scripts:
     name: script shell + ket thuc dong

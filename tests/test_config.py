@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import providers
-from migrate_mail.config import load_config
+from postboat import providers
+from postboat.config import load_config
 
 MINIMAL_DEST = """
 [dest]
@@ -23,7 +23,7 @@ host = mail.congty.vn
 
 class ConfigCase(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mm-config-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pb-config-"))
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -263,7 +263,7 @@ class TestTlsVerify(ConfigCase):
 
     def test_context_verifies_when_on(self):
         import ssl as ssl_mod
-        from migrate_mail.discover import ssl_context
+        from postboat.discover import ssl_context
         cfg = self.load("[source]\nhost = imap.gmail.com\n" + MINIMAL_DEST)
         ctx = ssl_context(cfg.source)
         self.assertTrue(ctx.check_hostname)
@@ -271,7 +271,7 @@ class TestTlsVerify(ConfigCase):
 
     def test_context_stops_verifying_when_off(self):
         import ssl as ssl_mod
-        from migrate_mail.discover import ssl_context
+        from postboat.discover import ssl_context
         cfg = self.load("[source]\nhost = imap.gmail.com\ntls_verify = false\n"
                         + MINIMAL_DEST)
         ctx = ssl_context(cfg.source)

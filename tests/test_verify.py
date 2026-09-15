@@ -7,10 +7,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import verify
-from migrate_mail.config import Config, Paths, ServerConf, SyncConf
-from migrate_mail.runner import build_command
-from migrate_mail.users import User
+from postboat import verify
+from postboat.config import Config, Paths, ServerConf, SyncConf
+from postboat.runner import build_command
+from postboat.users import User
 from pathlib import Path
 
 
@@ -214,12 +214,12 @@ class TestDateFlagsInCommand(unittest.TestCase):
 
 class TestDateSourceConfigValidation(unittest.TestCase):
     def test_rejects_unknown_value(self):
-        from migrate_mail.config import _date_source
+        from postboat.config import _date_source
         with self.assertRaises(ValueError):
             _date_source("hom-qua")
 
     def test_accepts_known_values_case_insensitively(self):
-        from migrate_mail.config import _date_source
+        from postboat.config import _date_source
         self.assertEqual(_date_source("INTERNAL"), "internal")
         self.assertEqual(_date_source(" Header "), "header")
 

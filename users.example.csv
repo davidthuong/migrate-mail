@@ -3,7 +3,7 @@
 # Neu ben nguon xuat duoc danh sach mailbox (Get-Mailbox cua Microsoft 365,
 # Exchange), khong can go tay file nay:
 #
-#   ./mm.py mkusers mailboxes.csv --dst-domain congty.vn
+#   ./postboat.py mkusers mailboxes.csv --dst-domain congty.vn
 #
 # src_password  = mat khau hop thu ben NGUON. Tuy nha cung cap:
 #
@@ -20,7 +20,7 @@
 #
 # dst_password  = mat khau hop thu ben dich.
 #
-# Xem cach chuan bi cho tung nguon: ./mm.py providers <ten>
+# Xem cach chuan bi cho tung nguon: ./postboat.py providers <ten>
 #
 # Dong bat dau bang # va dong trong deu duoc bo qua.
 src_user,src_password,dst_user,dst_password

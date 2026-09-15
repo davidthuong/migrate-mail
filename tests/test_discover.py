@@ -15,13 +15,13 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import providers
-from migrate_mail.config import (MASTER_AUTHZID, MASTER_SEPARATOR, MasterConf,
+from postboat import providers
+from postboat.config import (MASTER_AUTHZID, MASTER_SEPARATOR, MasterConf,
                                  ServerConf, SyncConf)
-from migrate_mail.discover import (_login, _parse_list_line, _Plain,
+from postboat.discover import (_login, _parse_list_line, _Plain,
                                    build_plan, special_use_roles)
-from migrate_mail.imaputf7 import decode
-from migrate_mail.providers import AUTH_MASTER
+from postboat.imaputf7 import decode
+from postboat.providers import AUTH_MASTER
 
 BS = chr(92)
 Q = chr(34)

@@ -22,8 +22,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from migrate_mail import web
-from migrate_mail.config import load_config
+from postboat import web
+from postboat.config import load_config
 
 from test_cli import CONFIG
 from test_web import WebTestCase
@@ -129,7 +129,7 @@ class TestSafeLogPath(unittest.TestCase):
     """Kiem thang ham loc ten tep, gom ca thu khong gui qua HTTP duoc."""
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmsafe-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbsafe-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         (self.tmp / "config.ini").write_text(
             CONFIG.format(imapsync="imapsync"), encoding="utf-8")
@@ -173,7 +173,7 @@ class TestGlobalActions(unittest.TestCase):
         return web._make_args(action, list(only), Path("users.csv"), cfg)
 
     def cfg(self):
-        tmp = Path(tempfile.mkdtemp(prefix="mmglobal-"))
+        tmp = Path(tempfile.mkdtemp(prefix="pbglobal-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         (tmp / "config.ini").write_text(CONFIG.format(imapsync="imapsync"),
                                         encoding="utf-8")
@@ -214,14 +214,14 @@ class TestGlobalActions(unittest.TestCase):
         self.assertEqual(self.args("handover", cfg=self.cfg()).out, "")
 
     def test_moi_tac_vu_moi_deu_co_nut_tren_trang(self):
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         for action in self.NEW:
             self.assertIn('data-act="%s"' % action, PAGE)
 
     def test_nut_toan_cuc_duoc_danh_dau_tren_trang(self):
         """Neu quen data-global tren mot nut thi no gui kem lua chon o bang
         tren, va khong co gi bao ca -- bao cao chi im lang thieu mailbox."""
-        from migrate_mail.web_ui import PAGE
+        from postboat.web_ui import PAGE
         marked = set(re.findall(r'data-act="([a-z-]+)" data-global="1"', PAGE))
         self.assertEqual(marked, set(web.GLOBAL_ACTIONS))
 

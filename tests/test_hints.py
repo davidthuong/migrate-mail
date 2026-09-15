@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import report
-from migrate_mail.hints import diagnose
+from postboat import report
+from postboat.hints import diagnose
 
 
 class TestDiagnose(unittest.TestCase):
@@ -356,7 +356,7 @@ class TestHintsRecomputedFromLog(unittest.TestCase):
            "Exiting with return value 115 (EXIT_ERR_FETCH) 1/50 nb_errors\n")
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmhint-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbhint-"))
         self.addCleanup(shutil.rmtree, str(self.tmp), True)
         self.log = self.write(self.tmp / "a.sync.log", self.LOG)
         report._hint_cache.clear()
@@ -433,7 +433,7 @@ class TestLatestRows(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmruns-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbruns-"))
         self.addCleanup(shutil.rmtree, str(self.tmp), True)
 
     def save(self, stamp, rows):
@@ -478,7 +478,7 @@ class TestMergedRows(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmmerge-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbmerge-"))
         self.addCleanup(shutil.rmtree, str(self.tmp), True)
 
     def save(self, stamp, rows):
@@ -542,7 +542,7 @@ class TestSignalHints(unittest.TestCase):
 
     def test_sigpipe_noi_ve_mat_ket_noi_chu_khong_phai_dang_nhap(self):
         tips = diagnose("msg INBOX/205 copied to INBOX/205\n"
-                        "migrate-mail: imapsync killed by signal 13\n")
+                        "postboat: imapsync killed by signal 13\n")
         self.assertTrue(tips)
         joined = " ".join(tips).lower()
         self.assertIn("mat ket noi", joined)
@@ -551,19 +551,19 @@ class TestSignalHints(unittest.TestCase):
         self.assertIn("khong bi chep lai", joined)
 
     def test_sigkill_chi_toi_oom(self):
-        tips = diagnose("migrate-mail: imapsync killed by signal 9\n")
+        tips = diagnose("postboat: imapsync killed by signal 9\n")
         joined = " ".join(tips).lower()
         self.assertIn("oom", joined)
         self.assertIn("workers", joined)
 
     def test_tin_hieu_la_van_co_goi_y_chung(self):
-        tips = diagnose("migrate-mail: imapsync killed by signal 11\n")
+        tips = diagnose("postboat: imapsync killed by signal 11\n")
         self.assertTrue(tips)
         self.assertIn("chay lai", " ".join(tips).lower())
 
     def test_chi_mot_goi_y_ve_tin_hieu(self):
         """SIGPIPE khop ca luat rieng lan luat chung -- chi duoc hien mot."""
-        tips = diagnose("migrate-mail: imapsync killed by signal 13\n")
+        tips = diagnose("postboat: imapsync killed by signal 13\n")
         ve_tin_hieu = [t for t in tips if "tin hieu" in t.lower()
                        or "mat ket noi" in t.lower()]
         self.assertEqual(len(ve_tin_hieu), 1, tips)

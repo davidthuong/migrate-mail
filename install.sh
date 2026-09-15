@@ -172,4 +172,4 @@ echo
 log "Xong. Buoc tiep theo:"
 echo "    cp config.example.ini config.ini   && vi config.ini"
 echo "    cp users.example.csv  users.csv    && vi users.csv && chmod 600 users.csv"
-echo "    python3 mm.py doctor"
+echo "    python3 postboat.py doctor"

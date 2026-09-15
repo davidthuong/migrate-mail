@@ -134,7 +134,7 @@ class Provider:
     # So ket noi IMAP dong thoi toi da cho mot account. 0 = khong ro.
     max_connections: int = 0
 
-    # Viec phai lam truoc khi migrate duoc, in ra boi `mm.py providers`.
+    # Viec phai lam truoc khi migrate duoc, in ra boi `postboat.py providers`.
     prep: Tuple[str, ...] = ()
 
     def name_roles(self) -> Dict[str, str]:

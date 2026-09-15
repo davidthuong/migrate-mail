@@ -1,18 +1,18 @@
 # Chay dashboard nhu mot dich vu, de no song qua viec dong phien SSH.
 #
-# Dat file nay o /etc/systemd/system/migrate-mail.service roi:
+# Dat file nay o /etc/systemd/system/postboat.service roi:
 #   systemctl daemon-reload
-#   systemctl enable --now migrate-mail
+#   systemctl enable --now postboat
 #
 # Xem token de dang nhap:
-#   journalctl -u migrate-mail | grep '?t='
+#   journalctl -u postboat | grep '?t='
 #
 # Token in ra luc khoi dong va chi doc duoc o day. No doi moi moi lan
 # restart, nen restart dich vu la moi nguoi phai dang nhap lai -- cach nhanh
 # nhat de dong cua neu nghi co chuyen.
 
 [Unit]
-Description=migrate-mail dashboard
+Description=postboat dashboard
 After=network-online.target
 Wants=network-online.target
 
@@ -28,11 +28,11 @@ Type=simple
 
 # Sua hai dong nay cho khop may cua ban.
 User=migrate
-WorkingDirectory=/opt/migrate-mail
+WorkingDirectory=/opt/postboat
 
 # -u khong con can (serve() da flush tu commit b8c554e), nhung de lai thi
 # khong hai va giup log ra deu hon neu sau nay co cho nao in bang print.
-ExecStart=/usr/bin/python3 -u mm.py web
+ExecStart=/usr/bin/python3 -u postboat.py web
 
 # Mac dinh nghe tren 127.0.0.1:8765 va chi Caddy goi toi. KHONG them
 # --host 0.0.0.0 o day: lam vay la vut het ba lop bao ve trong Caddyfile.
@@ -47,7 +47,7 @@ PrivateTmp=yes
 ProtectSystem=full
 
 # ProtectHome chan ghi vao /home. Chi giu dong nay khi tool nam ngoai /home
-# (vd /opt/migrate-mail nhu tren). Cai trong /home/... thi phai bo no di,
+# (vd /opt/postboat nhu tren). Cai trong /home/... thi phai bo no di,
 # neu khong logs/ va state/ khong ghi duoc va moi lan chay deu hong.
 ProtectHome=read-only
 ProtectControlGroups=yes

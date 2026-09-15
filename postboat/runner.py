@@ -494,7 +494,7 @@ def run_user(cfg: Config, user: User, plan: Optional[Plan], mode: str = MODE_SYN
             result.exit_label = _signal_label(-result.exit_code)
             # Them mot dong cho diagnose() bat: manh moi duy nhat la ma thoat,
             # ma diagnose() thi doc van ban.
-            text += "\nmigrate-mail: imapsync killed by signal %d\n" % (
+            text += "\npostboat: imapsync killed by signal %d\n" % (
                 -result.exit_code)
         elif result.exit_code != 0 and not result.exit_label:
             result.exit_label = "exit code %d" % result.exit_code

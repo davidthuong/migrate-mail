@@ -21,8 +21,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from migrate_mail import cli
-from migrate_mail.report import load_run
+from postboat import cli
+from postboat.report import load_run
 
 from test_discover import GMAIL_EN, parse
 
@@ -67,15 +67,15 @@ def no_dest_namespace(cfg, user, side, timeout=60):
     Phai gia lap: do namespace la mot lan dang nhap IMAP that su, va bo test
     nay khong cham mang. Cac test co tien to that nam trong test_providers.
     """
-    from migrate_mail.discover import Layout
+    from postboat.discover import Layout
     return Layout()
 
 
 class CliTestCase(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbtest-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        patcher = mock.patch("migrate_mail.discover.server_layout",
+        patcher = mock.patch("postboat.discover.server_layout",
                              side_effect=no_dest_namespace)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -123,14 +123,14 @@ class TestDoctor(CliTestCase):
 
 def fake_folders(cfg, user, timeout=60):
     if "loi" in user.src_user:
-        from migrate_mail.discover import DiscoveryError
+        from postboat.discover import DiscoveryError
         raise DiscoveryError("login that bai: Invalid credentials")
     return parse(GMAIL_EN)
 
 
 class TestSync(CliTestCase):
     def sync(self, *args):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             return self.run_cli("sync", *args)
 
     def test_full_run_reports_per_mailbox_outcome(self):
@@ -178,7 +178,7 @@ class TestSync(CliTestCase):
         """Google hien app password co khoang trang; IMAP nhan ban lien nhau."""
         self.sync()
         # imapsync gia da xac nhan passfile ton tai; kiem tra noi dung qua User
-        from migrate_mail.users import load_users
+        from postboat.users import load_users
         u = load_users(self.tmp / "users.csv")[0]
         self.assertEqual(u.src_password, "aaaabbbbccccdddd")
 
@@ -280,7 +280,7 @@ class TestMasterAuthEndToEnd(CliTestCase):
         (self.tmp / "users.csv").write_text(MASTER_USERS, encoding="utf-8")
 
     def sync(self, *args):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             return self.run_cli("sync", *args)
 
     def test_users_csv_without_a_source_password_column_is_accepted(self):
@@ -326,14 +326,14 @@ class TestMasterAuthEndToEnd(CliTestCase):
 
 class TestReport(CliTestCase):
     def test_report_replays_last_run(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync")
         code, out = self.run_cli("report")
         self.assertEqual(code, 0, out)
         self.assertIn("2/3 mailbox OK", out)
 
     def test_report_list_shows_saved_runs(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync")
         code, out = self.run_cli("report", "--list")
         self.assertEqual(code, 0)
@@ -345,7 +345,7 @@ class TestReport(CliTestCase):
         self.assertIn("Chua co lan chay nao", out)
 
     def test_report_can_export_html(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync")
         out_path = self.tmp / "bao-cao.html"
         code, _ = self.run_cli("report", "--out", str(out_path))
@@ -360,7 +360,7 @@ class TestReport(CliTestCase):
     # Bao cao mac dinh chi doc lan chay cuoi, rat de tuong nham la toan bo.
 
     def two_separate_runs(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync", "--only", "an@cu.com")
             self.run_cli("sync", "--only", "binh@cu.com")
 
@@ -384,7 +384,7 @@ class TestReport(CliTestCase):
         self.assertIn("Dung --all", out)
 
     def test_no_pointer_when_the_run_already_covers_everyone(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync")
         _code, out = self.run_cli("report")
         self.assertNotIn("--all", out)
@@ -392,7 +392,7 @@ class TestReport(CliTestCase):
     def test_all_sums_volume_when_a_mailbox_ran_more_than_once(self):
         """Hop bi Gmail cat giua chung roi chay lai da chuyen o ca hai lan;
         lay lan cuoi lam bao cao la ke thieu cong cua chinh minh."""
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync", "--only", "an@cu.com")
             self.run_cli("sync", "--only", "an@cu.com")
         _code, out = self.run_cli("report", "--all")
@@ -406,7 +406,7 @@ class TestReport(CliTestCase):
         self.assertIn("tong cong don", out_path.read_text(encoding="utf-8"))
 
     def test_plain_report_html_has_no_such_note(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync")
         out_path = self.tmp / "mot-lan.html"
         self.run_cli("report", "--out", str(out_path))
@@ -428,9 +428,9 @@ class TestVerifyCommand(CliTestCase):
 
     def run_verify(self, fetch_index, *extra):
         conn = mock.MagicMock()
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
-             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.cli.open_connection", return_value=conn), \
+             mock.patch("postboat.verify.fetch_index", side_effect=fetch_index):
             return self.run_cli("verify", "--only", "an@cu.com", *extra)
 
     def test_source_is_sampled_but_destination_is_read_in_full(self):
@@ -468,7 +468,7 @@ class TestVerifyCommand(CliTestCase):
 
 
 def _cfg_stub():
-    from migrate_mail.config import Config, Paths, ServerConf, SyncConf
+    from postboat.config import Config, Paths, ServerConf, SyncConf
     return Config(
         source=ServerConf("imap.gmail.com", 993, True),
         dest=ServerConf("mail.moi.vn", 993, True),
@@ -482,7 +482,7 @@ VI_RAW_DEST = "Kh&AOE-ch h&AOA-ng.D&HvE- &AOE-n A"
 
 
 def _vi_folder(raw="C&APQ-ng vi&Hsc-c/D&HvE- &AOE-n A"):
-    from migrate_mail.discover import _parse_list_line
+    from postboat.discover import _parse_list_line
     from test_discover import imap_line
     return _parse_list_line(imap_line("HasNoChildren", raw))
 
@@ -503,12 +503,12 @@ class TestVietnameseNamesAreReadable(unittest.TestCase):
         return buf.getvalue()
 
     def plan(self):
-        from migrate_mail.discover import Plan
+        from postboat.discover import Plan
         f = _vi_folder()
         return Plan(folders=[f], mapped=[(f, VI_RAW_DEST)])
 
     def test_destination_column_is_decoded(self):
-        from migrate_mail.users import User
+        from postboat.users import User
         user = User("an@cu.vn", "", "an@moi.vn", "x", row=2)
         text = self.render(cli._print_plan, user, self.plan(), _cfg_stub())
         self.assertIn(u"Dự án A", text)      # cot dich
@@ -516,7 +516,7 @@ class TestVietnameseNamesAreReadable(unittest.TestCase):
         self.assertNotIn("&AOE-", text)
 
     def test_unmappable_warning_is_decoded(self):
-        from migrate_mail.discover import Plan
+        from postboat.discover import Plan
         f = _vi_folder("C&APQ-ng vi&Hsc-c/a=b")
         plan = Plan(folders=[f], kept=[f], unmappable=[(f, VI_RAW_DEST)])
         text = self.render(cli._print_unmappable, plan)
@@ -526,7 +526,7 @@ class TestVietnameseNamesAreReadable(unittest.TestCase):
     def test_collision_note_is_decoded_but_the_config_line_is_not(self):
         """Dong extra_args duoc copy thang vao config.ini va imapsync doi ten
         IMAP THO -- decode cho de mat se dan ra mot dong config khong chay."""
-        from migrate_mail.discover import Plan
+        from postboat.discover import Plan
         a, b = _vi_folder(), _vi_folder("L&AbA-u tr&Hu8-")
         plan = Plan(folders=[a, b], mapped=[(a, VI_RAW_DEST), (b, VI_RAW_DEST)])
         text = self.render(cli._print_collisions, plan, _cfg_stub())
@@ -572,19 +572,19 @@ class TestDestinationPrefixIsVisible(CliTestCase):
     """
 
     def discover(self, layout=None, error=None):
-        from migrate_mail.discover import DiscoveryError, Layout
+        from postboat.discover import DiscoveryError, Layout
 
         def fake_layout(cfg, user, side, timeout=60):
             if error:
                 raise DiscoveryError(error)
             return layout or Layout()
 
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.discover.server_layout", side_effect=fake_layout):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.discover.server_layout", side_effect=fake_layout):
             return self.run_cli("discover", "--only", "an@cu.com")
 
     def test_says_when_the_destination_has_a_prefix(self):
-        from migrate_mail.discover import Layout
+        from postboat.discover import Layout
         code, out = self.discover(Layout(prefix="INBOX.", delim="."))
         self.assertEqual(code, 0, out)
         self.assertIn("INBOX.Sent", out)
@@ -608,7 +608,7 @@ class TestDiscoverDest(CliTestCase):
     """`discover --dest` phai noi ro ten nao SE dung, va canh bao khi thieu."""
 
     def run_dest(self, dest_folders):
-        from migrate_mail.discover import Folder
+        from postboat.discover import Folder
 
         def fake(cfg, user, side="source", timeout=60):
             if side != "dest":
@@ -616,7 +616,7 @@ class TestDiscoverDest(CliTestCase):
             return [Folder(raw=n, display=n, flags=set(fl), delim="/")
                     for n, fl in dest_folders]
 
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake):
             return self.run_cli("discover", "--dest", "--only", "an@cu.com")
 
     def test_takes_the_name_the_destination_flags_itself(self):
@@ -672,12 +672,12 @@ class TestDiscoverDest(CliTestCase):
         self.assertIn("special-use: Junk", out)
 
     def test_login_failure_is_reported(self):
-        from migrate_mail.discover import DiscoveryError
+        from postboat.discover import DiscoveryError
 
         def boom(cfg, user, side="source", timeout=60):
             raise DiscoveryError("login IceWarp that bai: Authentication failed")
 
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=boom):
+        with mock.patch("postboat.cli.list_folders", side_effect=boom):
             code, out = self.run_cli("discover", "--dest", "--only", "an@cu.com")
         self.assertEqual(code, 1)
         self.assertIn("Authentication failed", out)
@@ -685,7 +685,7 @@ class TestDiscoverDest(CliTestCase):
 
 class TestFoldersOnly(CliTestCase):
     def run_it(self, *args):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             return self.run_cli("sync", "--only", "an@cu.com", *args)
 
     def test_folders_only_passes_justfolders_without_dry(self):
@@ -714,7 +714,7 @@ class TestFoldersOnly(CliTestCase):
 
 class TestSizesCommand(CliTestCase):
     def test_sizes_action_reaches_imapsync(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             code, out = self.run_cli("sync", "--sizes", "--only", "an@cu.com")
         self.assertEqual(code, 0, out)
         flat = self.recorded_argv()[0]
@@ -722,12 +722,12 @@ class TestSizesCommand(CliTestCase):
         self.assertNotIn("--nofoldersizes", flat)
 
     def test_announces_it_will_not_move_mail(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             _code, out = self.run_cli("sync", "--sizes", "--only", "an@cu.com")
         self.assertIn("Chi dem dung luong", out)
 
     def test_sizes_does_not_mark_mailbox_done(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             self.run_cli("sync", "--sizes", "--only", "an@cu.com")
         self.assertFalse((self.tmp / "state" / "an@cu.com" / "done.marker").exists())
 
@@ -746,24 +746,24 @@ class TestOnlyAcceptsBothSpellings(CliTestCase):
         return sorted(u for u in ("an@cu.com", "binh@cu.com") if u in out)
 
     def test_dau_phay(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             _code, out = self.run_cli("sync", "--only", "an@cu.com,binh@cu.com")
         self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
 
     def test_lap_co(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             _code, out = self.run_cli("sync", "--only", "an@cu.com",
                                       "--only", "binh@cu.com")
         self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
 
     def test_tron_hai_kieu(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             _code, out = self.run_cli("sync", "--only", "an@cu.com,binh@cu.com",
                                       "--only", "an@cu.com")
         self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
 
     def test_khong_khai_thi_chay_het(self):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders):
             _code, out = self.run_cli("sync")
         self.assertEqual(["an@cu.com", "binh@cu.com"], self.users_run(out))
 
@@ -817,7 +817,7 @@ class TestCtrlCStopsTheRun(unittest.TestCase):
 
     def test_lan_dau_ha_sigterm_va_noi_ra_man_hinh(self):
         buf = io.StringIO()
-        with mock.patch("migrate_mail.runner.stop_all", return_value=2) as stop:
+        with mock.patch("postboat.runner.stop_all", return_value=2) as stop:
             with redirect_stdout(buf), cli._stop_on_interrupt():
                 handler = signal.getsignal(signal.SIGINT)
                 with self.assertRaises(KeyboardInterrupt):
@@ -832,7 +832,7 @@ class TestCtrlCStopsTheRun(unittest.TestCase):
     def test_lan_hai_cat_phang(self):
         buf = io.StringIO()
         hard = getattr(signal, "SIGKILL", signal.SIGTERM)
-        with mock.patch("migrate_mail.runner.stop_all", return_value=1) as stop:
+        with mock.patch("postboat.runner.stop_all", return_value=1) as stop:
             with redirect_stdout(buf), cli._stop_on_interrupt():
                 handler = signal.getsignal(signal.SIGINT)
                 for _ in range(2):
@@ -875,9 +875,9 @@ class TestVerifyReportsUncheckableMail(CliTestCase):
 
     def run_verify(self, fetch_index, *extra):
         conn = mock.MagicMock()
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
-             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.cli.open_connection", return_value=conn), \
+             mock.patch("postboat.verify.fetch_index", side_effect=fetch_index):
             return self.run_cli("verify", "--only", "an@cu.com", *extra)
 
     @staticmethod
@@ -936,11 +936,11 @@ class TestPreflightSavesItsResult(CliTestCase):
             if side == "dest" and user.dst_user.startswith("chi@"):
                 return False, "[AUTHENTICATIONFAILED] Authentication failed."
             return True, ""
-        with mock.patch("migrate_mail.cli.check_login", side_effect=fake_check):
+        with mock.patch("postboat.cli.check_login", side_effect=fake_check):
             return self.run_cli("preflight", *args)
 
     def saved(self):
-        from migrate_mail.report import load_preflight
+        from postboat.report import load_preflight
         return load_preflight(self.tmp / "state")
 
     def test_ghi_ket_qua_cho_tung_mailbox(self):
@@ -970,7 +970,7 @@ class TestPreflightSavesItsResult(CliTestCase):
 
     def test_khong_ghi_duoc_thi_van_chay_tiep(self):
         """Mat file luu la chuyen nho; dung ca preflight moi la chuyen to."""
-        with mock.patch("migrate_mail.report.save_preflight",
+        with mock.patch("postboat.report.save_preflight",
                         side_effect=OSError("dia day")):
             code, out = self.preflight()
         self.assertEqual(code, 1)
@@ -989,9 +989,9 @@ class TestVerifyNamesTheMissingMail(CliTestCase):
 
     def run_verify(self, fetch_index, *extra):
         conn = mock.MagicMock()
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
-             mock.patch("migrate_mail.verify.fetch_index", side_effect=fetch_index):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.cli.open_connection", return_value=conn), \
+             mock.patch("postboat.verify.fetch_index", side_effect=fetch_index):
             return self.run_cli("verify", "--only", "an@cu.com", *extra)
 
     @staticmethod
@@ -1094,7 +1094,7 @@ class TestDoctorChecksTokenPermissions(CliTestCase):
         if roles is not None:
             claims["roles"] = roles
         token = "%s.%s.ky" % (seg({"alg": "RS256"}), seg(claims))
-        with mock.patch("migrate_mail.oauth.request_token",
+        with mock.patch("postboat.oauth.request_token",
                         return_value=(token, 3599)):
             return self.run_cli("doctor")
 
@@ -1123,7 +1123,7 @@ class TestDoctorChecksTokenPermissions(CliTestCase):
 
     def test_token_la_thi_canh_bao_chu_khong_chan(self):
         """Khong doc duoc dinh dang thi dung ket luan la thieu quyen."""
-        with mock.patch("migrate_mail.oauth.request_token",
+        with mock.patch("postboat.oauth.request_token",
                         return_value=("khong-phai-jwt", 3599)):
             code, out = self.run_cli("doctor")
         self.assertIn("khong doc duoc quyen trong token", out)
@@ -1140,12 +1140,12 @@ class TestVerifyDistinguishesConnectionFailure(CliTestCase):
     """
 
     def run_verify(self, **kw):
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.cli.open_connection", **kw):
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.cli.open_connection", **kw):
             return self.run_cli("verify", "--only", "an@cu.com")
 
     def test_khong_noi_duoc_thi_noi_la_loi_ket_noi(self):
-        from migrate_mail.discover import DiscoveryError
+        from postboat.discover import DiscoveryError
         code, out = self.run_verify(side_effect=DiscoveryError(
             "khong ket noi duoc outlook.office365.com:993 "
             "(_ssl.c:983: The handshake operation timed out)"))
@@ -1155,7 +1155,7 @@ class TestVerifyDistinguishesConnectionFailure(CliTestCase):
 
     def test_khong_hoi_da_chay_sync_chua(self):
         """Cau hoi do sai huong khi van de la duong truyen."""
-        from migrate_mail.discover import DiscoveryError
+        from postboat.discover import DiscoveryError
         _code, out = self.run_verify(side_effect=DiscoveryError("het gio cho"))
         self.assertNotIn("Da chay sync chua", out)
 
@@ -1163,9 +1163,9 @@ class TestVerifyDistinguishesConnectionFailure(CliTestCase):
         """Mo duoc hop thu ma khong co gi -- luc do "da chay sync chua?" moi
         dung la cau hoi can hoi."""
         conn = mock.MagicMock()
-        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
-             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
-             mock.patch("migrate_mail.verify.fetch_index",
+        with mock.patch("postboat.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("postboat.cli.open_connection", return_value=conn), \
+             mock.patch("postboat.verify.fetch_index",
                         side_effect=lambda c, f, cap: ({}, 0, 0)):
             code, out = self.run_cli("verify", "--only", "an@cu.com")
         self.assertEqual(code, 1)

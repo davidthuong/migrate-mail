@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dashboard web cho migrate-mail. Chi dung thu vien chuan.
+"""Dashboard web cho Postboat. Chi dung thu vien chuan.
 
 An toan -- doc truoc khi mo ra ngoai:
 
@@ -368,7 +368,7 @@ def _safe_log_path(cfg: Config, name: str) -> Optional[Path]:
 # --------------------------------------------------------------------------- #
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "migrate-mail/" + __version__
+    server_version = "Postboat/" + __version__
     manager: JobManager = None          # type: ignore[assignment]
     token: str = ""
     users_path: Path = None             # type: ignore[assignment]
@@ -434,7 +434,7 @@ class Handler(BaseHTTPRequestHandler):
         cookie = self.headers.get("Cookie") or ""
         for part in cookie.split(";"):
             name, _, value = part.strip().partition("=")
-            if name == "mmtoken" and secrets.compare_digest(value, self.token):
+            if name == "pbtoken" and secrets.compare_digest(value, self.token):
                 return True
         return False
 
@@ -487,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Location", "/")
                 self.send_header(
                     "Set-Cookie",
-                    "mmtoken=%s; Path=/; HttpOnly; SameSite=Strict" % self.token)
+                    "pbtoken=%s; Path=/; HttpOnly; SameSite=Strict" % self.token)
                 self.end_headers()
                 return
             if not self._authorised():
@@ -723,7 +723,7 @@ def serve(cfg: Config, users_path: Path, host: str = "127.0.0.1",
     # trong dem, va vi server sau do khong in gi nua nen no nam do MAI MAI.
     # Nguoi chay mat token, tuc la mat luon duong vao dashboard cua chinh minh,
     # trong khi server van dang phuc vu binh thuong.
-    cli.say("migrate-mail dashboard %s" % __version__)
+    cli.say("Postboat dashboard %s" % __version__)
     cli.say()
     if host not in ("127.0.0.1", "localhost", "::1"):
         cli.say("  CANH BAO: dang lang nghe tren %s, tuc la mo ra ngoai may nay." % host)

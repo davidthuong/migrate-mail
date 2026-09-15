@@ -16,8 +16,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from migrate_mail import handover, report
-from migrate_mail.config import HandoverConf
+from postboat import handover, report
+from postboat.config import HandoverConf
 
 
 def row(src, ok=True, mail=100, byts=1024, **kw):
@@ -220,7 +220,7 @@ class TestLuuKetQuaVerify(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
 
     def check(self, src, mismatched=0, error=""):
-        from migrate_mail.verify import FolderCheck, UserCheck
+        from postboat.verify import FolderCheck, UserCheck
         fc = FolderCheck(source_folder="INBOX", dest_folder="INBOX",
                          compared=10, matched=10 - mismatched,
                          mismatched=mismatched)

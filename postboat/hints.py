@@ -322,14 +322,14 @@ _COMMON_RULES = [
     _rule(24, r"trycreate|can't create folder|create failed",
           "Khong tao duoc folder ben IceWarp. Thuong do ten folder trung voi "
           "folder PIM co san (Contacts, Calendar, Tasks, Notes) hoac chua ky tu "
-          "IceWarp khong nhan. Xem ./mm.py discover de biet folder nao, roi dat "
+          "IceWarp khong nhan. Xem ./postboat.py discover de biet folder nao, roi dat "
           "ten khac qua extra_args voi --regextrans2.",
           scope=("icewarp",), side=DEST, family="create"),
 
     _rule(25, r"trycreate|can't create folder|create failed",
           "Khong tao duoc folder ben %(dich)s. Thuong do ten folder chua ky tu "
           "server dich khong nhan, hoac trung ten voi folder he thong. Xem "
-          "./mm.py discover --dest de doi chieu, roi dat ten khac qua extra_args "
+          "./postboat.py discover --dest de doi chieu, roi dat ten khac qua extra_args "
           "voi --regextrans2.", family="create"),
 
     _rule(30, r"connection refused|no route to host|network is unreachable",
@@ -380,7 +380,7 @@ _COMMON_RULES = [
 
     _rule(40, r"unknown option|unrecognized option",
           "Ban imapsync dang cai khong biet mot tuy chon tool nay dung. Chay "
-          "./mm.py doctor de biet tuy chon nao, roi nang cap imapsync."),
+          "./postboat.py doctor de biet tuy chon nao, roi nang cap imapsync."),
 ]
 
 _RULES: List[_Rule] = _LIMIT_RULES + _AUTH_RULES + _COMMON_RULES

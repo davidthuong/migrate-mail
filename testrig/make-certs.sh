@@ -27,7 +27,7 @@ fi
 echo "==> CA"
 openssl req -x509 -newkey rsa:2048 -sha256 -days "$DAYS" -nodes \
   -keyout "$DIR/ca.key" -out "$DIR/ca.crt" \
-  -subj "/CN=migrate-mail testrig CA" 2>/dev/null
+  -subj "/CN=Postboat testrig CA" 2>/dev/null
 
 for side in src dst; do
   echo "==> chung chi cho $side ($side.test)"
@@ -58,7 +58,7 @@ ls -1 "$DIR"
 if [ "${1:-}" = "--trust" ]; then
   echo
   echo "==> cai CA vao trust store cua may nay"
-  cp "$DIR/ca.crt" /usr/local/share/ca-certificates/migrate-mail-testrig.crt
+  cp "$DIR/ca.crt" /usr/local/share/ca-certificates/postboat-testrig.crt
   update-ca-certificates
   echo "Xong. Python va imapsync deu doc trust store nay."
 fi

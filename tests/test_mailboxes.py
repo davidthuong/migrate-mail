@@ -18,8 +18,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-from migrate_mail import cli, mailboxes
-from migrate_mail.users import load_users, required_columns
+from postboat import cli, mailboxes
+from postboat.users import load_users, required_columns
 
 # Export-Csv cua PowerShell 5.1 khi quen -NoTypeInformation.
 EXPORT_CSV = (
@@ -225,7 +225,7 @@ class TestRows(unittest.TestCase):
 
 class TestWriteUsers(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbtest-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def test_written_file_is_readable_by_load_users(self):
@@ -284,7 +284,7 @@ class TestRequiredColumns(unittest.TestCase):
     """Cot mat khau nao bat buoc, tuy theo kieu xac thuc cua tung dau."""
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbtest-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def write(self, text):
@@ -330,7 +330,7 @@ class TestRequiredColumns(unittest.TestCase):
 
 class TestMkusersCommand(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="mmtest-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="pbtest-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.config = self.tmp / "config.ini"
         self.config.write_text(CONFIG, encoding="utf-8")

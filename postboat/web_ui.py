@@ -6,7 +6,7 @@ PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>migrate-mail</title>
+<title>Postboat</title>
 <style>
  :root{
    --bg:#f6f7f9; --panel:#fff; --ink:#16191d; --muted:#6b7280; --line:#e3e6ea;
@@ -109,7 +109,7 @@ PAGE = r"""<!doctype html>
 </head>
 <body>
 <header>
-  <h1>migrate-mail</h1>
+  <h1>Postboat</h1>
   <div class="route">
     <b id="src">…</b> &rarr; <b id="dst">…</b>
   </div>

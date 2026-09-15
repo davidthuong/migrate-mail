@@ -11,11 +11,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from migrate_mail import providers
-from migrate_mail.config import ServerConf, SyncConf
-from migrate_mail.discover import (Layout, build_plan, invert_separator,
+from postboat import providers
+from postboat.config import ServerConf, SyncConf
+from postboat.discover import (Layout, build_plan, invert_separator,
                                    resolve_layout)
-from migrate_mail.providers import (ROLE_JUNK, ROLE_SENT, Provider, fold,
+from postboat.providers import (ROLE_JUNK, ROLE_SENT, Provider, fold,
                                     strip_namespace)
 
 from test_discover import GMAIL_EN, imap_line, parse

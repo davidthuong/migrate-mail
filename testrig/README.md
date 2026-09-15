@@ -43,7 +43,7 @@ máy này. Đúng cách một hệ thống nội bộ vẫn làm.
 
 ## Kiểm Dovecot trước, rồi mới đến tool
 
-Bước này tách lỗi Dovecot khỏi lỗi của migrate-mail. Bỏ qua nó là tự chuốc một
+Bước này tách lỗi Dovecot khỏi lỗi của Postboat. Bỏ qua nó là tự chuốc một
 buổi debug nhầm chỗ:
 
 ```bash
@@ -89,7 +89,7 @@ bài, chưa phải phần test.
 Đặt sẵn cho gọn (từ thư mục gốc của repo):
 
 ```bash
-MM="python3 mm.py --config testrig/config.testrig.ini --users testrig/users.testrig.csv"
+MM="python3 postboat.py --config testrig/config.testrig.ini --users testrig/users.testrig.csv"
 ```
 
 | # | Lệnh | Đạt là thấy gì |
@@ -161,7 +161,7 @@ trong 8 giây: thêm `maxbytespersecond = 120000` vào `[sync]`.
 Cẩn thận một cái bẫy khi tự động hoá bài #13: bash non-interactive đặt
 `SIGINT = SIG_IGN` cho tiến trình chạy nền bằng `&` (đúng chuẩn POSIX), và
 Python **giữ nguyên** trạng thái ignore đó lúc khởi động. Chạy thẳng
-`python3 mm.py ... &` rồi `kill -INT` thì tín hiệu không bao giờ tới nơi, và bài
+`python3 postboat.py ... &` rồi `kill -INT` thì tín hiệu không bao giờ tới nơi, và bài
 test sẽ tố cáo oan cái tool. Soi `grep SigIgn /proc/<pid>/status` — bit `0x2`
 bật là bài test hỏng chứ không phải tool hỏng.
 
@@ -275,7 +275,7 @@ migrate thật. Đổi hai đầu sang `port = 10143` / `20143` và `ssl = false
 kiểm thứ mà mã hoá *không* làm được:
 
 ```bash
-sudo rm -f /usr/local/share/ca-certificates/migrate-mail-testrig.crt
+sudo rm -f /usr/local/share/ca-certificates/postboat-testrig.crt
 sudo update-ca-certificates --fresh
 ```
 

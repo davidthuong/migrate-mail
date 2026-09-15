@@ -1,4 +1,4 @@
-# Caddy dung truoc dashboard migrate-mail.
+# Caddy dung truoc dashboard Postboat.
 #
 # DOC deploy/README.md TRUOC KHI DUNG FILE NAY.
 #
@@ -56,7 +56,7 @@ mm.congty.vn {
 
 		# --- Lop 3 la HTTPS, Caddy tu lam, khong can khai bao gi ----------
 
-		# Dashboard nghe o day. Dung doi thanh 0.0.0.0 ben phia mm.py.
+		# Dashboard nghe o day. Dung doi thanh 0.0.0.0 ben phia postboat.py.
 		reverse_proxy 127.0.0.1:8765
 	}
 
@@ -71,7 +71,7 @@ mm.congty.vn {
 	}
 
 	log {
-		output file /var/log/caddy/migrate-mail.log {
+		output file /var/log/caddy/postboat.log {
 			roll_size 10MiB
 			roll_keep 10
 		}

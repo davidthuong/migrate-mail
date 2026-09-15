@@ -4,7 +4,7 @@
 
 Dang nhap bang mat khau that cua tung hop thu (khong dung master): buoc seed
 la de DUNG SAN dau bai, khong phai de test. Phan test bat dau tu luc chay
-mm.py.
+postboat.py.
 
     python3 testrig/seed.py                 # mac dinh, nhanh
     python3 testrig/seed.py --big 2000      # them mail cho binh@cu.vn
