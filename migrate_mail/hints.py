@@ -298,6 +298,27 @@ _COMMON_RULES = [
           unless=r"exceeded command or bandwidth",
           family="fetch"),
 
+    # Server dich bao TAO DUOC roi lai bao khong ton tai. Nghe vo ly nhung gap
+    # that: IceWarp tra ve "Created folder [Archive] on host2" roi ngay sau do
+    # "Could not select: NO SELECT Mailbox does not exist". Ten do bi server
+    # dich giu rieng -- no nhan lenh CREATE cho co le phep chu khong thuc su
+    # tao gi.
+    #
+    # Phai co luat rieng: moi luat ve tao folder o duoi deu bat TRYCREATE hoac
+    # "create failed", ma o day CREATE bao thanh cong nen chung truot het. Lan
+    # gap that, mailbox chet voi EXIT_ERR_SELECT sau khi da chep xong 3.130
+    # mail, va khong mot goi y nao noi dung chuyen gi.
+    _rule(23, r"could not select.*(does not exist|no such|nonexistent)",
+          "%(dich)s bao TAO duoc folder roi lai bao no khong ton tai luc mo. "
+          "Ten folder do bi server dich giu rieng, khong dung lam folder mail "
+          "duoc. Doi ten dich cho no trong config.ini: archive_folder, "
+          "sent_folder, drafts_folder, trash_folder hoac junk_folder tuy vai "
+          "tro cua folder do -- vi du archive_folder = Luu tru. Neu folder do "
+          "rong thi cung co the bo han bang extra_args = --exclude \"^Ten$\". "
+          "Luu y mail KHONG mat: imapsync van chep het cac folder khac roi moi "
+          "thoat voi EXIT_ERR_SELECT, nen chay lai sau khi doi ten la xong.",
+          side=DEST, family="create"),
+
     _rule(24, r"trycreate|can't create folder|create failed",
           "Khong tao duoc folder ben IceWarp. Thuong do ten folder trung voi "
           "folder PIM co san (Contacts, Calendar, Tasks, Notes) hoac chua ky tu "

@@ -1076,6 +1076,7 @@ Chung cho mọi nguồn:
 | `[OVERQUOTA]` lúc ghi sang đích | Hộp thư đích đầy |
 | `Message too big` | Vượt giới hạn kích thước của server đích; đặt `maxsize` |
 | `[TRYCREATE]` | Không tạo được folder bên đích — với IceWarp thường do trùng tên với folder PIM (Contacts, Calendar, Tasks, Notes) |
+| `Could not select: NO SELECT Mailbox does not exist` ngay sau `Created folder ... on host2` | Đích **báo tạo được rồi báo không tồn tại** — tên đó bị nó giữ riêng. Đo thật: IceWarp làm đúng vậy với `Archive` (còn `Calendar`/`Contacts`/`Notes`/`Tasks` thì nhận bình thường). Đổi tên đích trong `config.ini` — `archive_folder = Luu tru` chẳng hạn — rồi chạy lại. **Mail không mất**: imapsync vẫn chép hết các folder khác rồi mới thoát với `EXIT_ERR_SELECT` |
 | `certificate verify failed` | Chứng chỉ TLS hết hạn, tự ký, hoặc không khớp `host` trong `config.ini` — sửa cho khớp, hoặc `tls_verify = false` nếu chắc chắn đường truyền an toàn |
 | `Can't locate ...pm in @INC` | Thiếu module Perl; chạy lại `install.sh` hoặc `cpanm <Module>` |
 | `Unknown option` | imapsync quá cũ so với tuỳ chọn tool dùng; chạy `doctor` |

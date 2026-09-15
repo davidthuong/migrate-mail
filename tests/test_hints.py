@@ -751,3 +751,50 @@ class TestXoauth2StringIsNotAFailure(unittest.TestCase):
                      "error: invalid_grant"):
             tips = diagnose(M365_DONG_BINH_THUONG + dong + "\n", source="m365")
             self.assertIn("New-ServicePrincipal", " ".join(tips), dong)
+
+
+# Chep nguyen van tu log that: M365 -> IceWarp, hop thu 3.130 mail.
+ICEWARP_ARCHIVE = """\
+Folder    1/11 [Archive]                           -> [Archive]
+Host1: folder [Archive] has 0 messages in total (mentioned by SELECT)
+Creating folder [Archive] on host2
+Created folder [Archive] on host2
+Host2 folder Archive: Could not select: 15 NO SELECT Mailbox does not exist
+Creating folder [Archive] on host2
+Created folder [Archive] on host2
+Host2 folder Archive: Could not select: 18 NO SELECT Mailbox does not exist
+The most frequent error is ERR_SELECT.
+Exiting with return value 117 (EXIT_ERR_SELECT) 2/50 nb_errors/max_errors
+"""
+
+
+class TestDestSaysCreatedThenDenied(unittest.TestCase):
+    """Server dich bao TAO DUOC roi bao KHONG TON TAI luc mo.
+
+    Gap that: IceWarp lam dung vay voi folder ten "Archive". Mailbox chet voi
+    EXIT_ERR_SELECT sau khi da chep xong 3.130 mail, va khong luat nao bat
+    duoc -- vi moi luat ve tao folder deu doi chuoi TRYCREATE hoac "create
+    failed", ma o day CREATE bao THANH CONG.
+    """
+
+    def test_co_goi_y(self):
+        self.assertTrue(diagnose(ICEWARP_ARCHIVE, dest="icewarp"))
+
+    def test_chi_dung_cho_sua_trong_config(self):
+        tips = " ".join(diagnose(ICEWARP_ARCHIVE, dest="icewarp"))
+        self.assertIn("archive_folder", tips)
+
+    def test_tran_an_rang_mail_khong_mat(self):
+        """3.130 mail da sang den noi; doc "EXIT_ERR_SELECT" ma khong co cau
+        nay thi de tuong ca lan chay do di tong."""
+        tips = " ".join(diagnose(ICEWARP_ARCHIVE, dest="icewarp"))
+        self.assertIn("KHONG mat", tips)
+
+    def test_bat_ca_khi_khong_biet_provider(self):
+        """Tinh lai goi y tu mot log cu thi khong con biet dich la gi."""
+        self.assertTrue(diagnose(ICEWARP_ARCHIVE))
+
+    def test_khong_dinh_vao_log_binh_thuong(self):
+        self.assertEqual(
+            diagnose("Creating folder [Sent] on host2\n"
+                     "Created folder [Sent] on host2\n", dest="icewarp"), [])
