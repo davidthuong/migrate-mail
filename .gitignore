@@ -1,9 +1,24 @@
 # Chua mat khau -- tuyet doi khong commit
-config.ini
-users.csv
+#
+# Chan ca ten bien the, khong chi dung hai ten mac dinh. Mot may chay that hay
+# co nhieu file canh nhau: config.m365.ini cho mot job khac, config.ini.bk va
+# users.csv.bike de danh tu ca truoc. Tat ca deu chua mat khau, va chi can mot
+# lan `git add -A` la len remote. Hai dong !ngoai-le duoi giu lai file mau va
+# file cua testrig (chung khong co mat khau that).
+config*.ini
+!config.example.ini
+!testrig/config.testrig.ini
+config.ini.*
+
+users*.csv
+!users.example.csv
+!testrig/users.testrig.csv
+users.csv.*
+
 *.pass
 master-pass.txt
 oauth-secret.txt
+*secret*.txt
 
 # Khoa rieng cua CA testrig -- sinh boi testrig/make-certs.sh
 testrig/certs/
