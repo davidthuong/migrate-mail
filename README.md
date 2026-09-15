@@ -1004,6 +1004,16 @@ Ba nguyên tắc an toàn của giao diện này:
 Mở ra ngoài bằng `--host 0.0.0.0` thì được, nhưng server sẽ cảnh báo — đừng làm
 vậy trừ khi có tường lửa chặn sẵn.
 
+### Vào từ xa mà không phải mở tunnel mỗi lần
+
+Có sẵn cấu hình Caddy trong [`deploy/`](deploy/README.md): HTTPS thật, mật khẩu,
+và lọc IP, cộng một unit systemd để dashboard sống qua việc đóng phiên SSH.
+Dashboard vẫn nghe trên `127.0.0.1` như cũ; Caddy đứng trước.
+
+Đọc [`deploy/README.md`](deploy/README.md) trước khi dùng — nó nói rõ rủi ro còn
+lại và bước tường lửa mà quên là hỏng cả ba lớp. **SSH tunnel vẫn an toàn hơn**;
+chỉ mở ra ngoài khi việc phải dựng tunnel mỗi lần thực sự cản trở.
+
 ---
 
 ## Báo cáo
@@ -1244,7 +1254,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     675 test, không chạm mạng
+tests/                     683 test, không chạm mạng
 testrig/                   hai Dovecot để thử những gì test không chứng minh được
 install.sh                 cài imapsync + module Perl
 .github/workflows/         CI: chạy bộ test trên Python 3.8 / 3.10 / 3.12

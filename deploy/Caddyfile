@@ -1,0 +1,79 @@
+# Caddy dung truoc dashboard migrate-mail.
+#
+# DOC deploy/README.md TRUOC KHI DUNG FILE NAY.
+#
+# Vi sao can no: web.py la http.server cua thu vien chuan, mot token cookie duy
+# nhat, khong HTTPS, khong gioi han so lan thu, khong co khai niem nhieu nguoi
+# dung. No duoc viet de nghe tren 127.0.0.1 va vao qua SSH tunnel. Dua nguyen
+# trang do ra Internet la dua ra mot thu dang giu MAT KHAU HOP THU CUA KHACH.
+#
+# File nay khong sua duoc ban chat do. No chi them ba lop truoc mat:
+#   1. Chi IP trong danh sach moi di tiep
+#   2. Mat khau HTTP basic
+#   3. HTTPS that, chung chi tu xin va tu gia han
+#
+# Dashboard VAN phai nghe tren 127.0.0.1 (mac dinh). Tuong lua KHONG duoc mo
+# cong 8765 ra ngoai -- neu mo thi ba lop tren bi di vong hoan toan, va khong
+# co gi bao ca.
+
+# ---------------------------------------------------------------------------
+# Ba cho phai sua truoc khi dung:
+#
+#   mm.congty.vn     ten mien that, da tro ban ghi A (va AAAA neu co IPv6) ve
+#                    dung VPS nay. Caddy xin chung chi bang cach chung minh no
+#                    giu ten mien do, nen DNS phai dung TRUOC khi khoi dong.
+#
+#   <BAM-MAT-KHAU>   sinh bang:  caddy hash-password
+#                    Caddy khong nhan mat khau tho. Bam bcrypt bat dau bang
+#                    "$2a$".
+#
+#   <IP-CUA-BAN>     dai IP duoc phep vao. Xem muc "Khong co IP tinh" trong
+#                    deploy/README.md neu mang nha ban doi IP.
+# ---------------------------------------------------------------------------
+
+mm.congty.vn {
+
+	# route giu nguyen THU TU VIET trong khoi nay. Ngoai route, Caddy tu sap
+	# xep lai theo bang thu tu cua no, va trong bang do basic_auth nam TRUOC
+	# abort -- tuc la mot IP ngoai danh sach van duoc moi nhap mat khau truoc
+	# khi bi tu choi. Nhu vay la noi cho nguoi la biet o day co cai de dang
+	# nhap. Trong route thi chan IP chay truoc, dung y dinh.
+	route {
+
+		# --- Lop 1: IP ---------------------------------------------------
+		# Bo ca hai dong nay neu khong co IP tinh -- nhung doc muc tuong ung
+		# trong deploy/README.md truoc, vi luc do lop 2 la thu duy nhat con
+		# lai giua Internet va mat khau hop thu cua khach.
+		@ngoai not remote_ip <IP-CUA-BAN>
+		abort @ngoai
+
+		# --- Lop 2: mat khau ---------------------------------------------
+		# Doi ten dang nhap "david" thanh ten khac cung duoc, mien la khop
+		# voi luc chay caddy hash-password.
+		basic_auth {
+			david <BAM-MAT-KHAU>
+		}
+
+		# --- Lop 3 la HTTPS, Caddy tu lam, khong can khai bao gi ----------
+
+		# Dashboard nghe o day. Dung doi thanh 0.0.0.0 ben phia mm.py.
+		reverse_proxy 127.0.0.1:8765
+	}
+
+	header {
+		# Trinh duyet nho rang ten mien nay chi di bang HTTPS, ke ca khi nguoi
+		# dung go "http://" hay bam mot link cu.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		# Bot mot dong noi cho nguoi la biet o day chay phan mem gi.
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/migrate-mail.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}
