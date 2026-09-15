@@ -156,7 +156,12 @@ _AUTH_RULES = [
     # dich chu khong chi dau nguon.
     _rule(13, r"authenticated but not connected",
           "Token DA duoc chap nhan; cho hong nam o QUYEN, khong phai o OAuth. "
-          "Bon thu phai du ca bon, kiem theo thu tu re truoc: "
+          "TRUOC KHI sua gi: neu vua dung xong app/quyen trong vong mot tieng "
+          "thi nhieu kha nang chi la chua lan kip -- Exchange Online co the "
+          "mat hang chuc phut. Doi roi chay lai preflight da. Gap that ngay "
+          "15/09: ca bon thu duoi deu dung san, chi thieu thoi gian, ma di sua "
+          "tiep thi de hong mot cau hinh von dang dung. "
+          "Doi mai van vay thi kiem bon thu nay, re truoc: "
           "(1) token co mang quyen chua -- giai ma phan giua cua token va xem "
           "truong 'roles', phai co IMAP.AccessAsApp; rong tuc la da them quyen "
           "nhung CHUA bam admin consent trong Entra ID, va doctor van xanh vi "

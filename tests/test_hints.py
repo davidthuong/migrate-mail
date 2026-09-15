@@ -694,3 +694,24 @@ class TestAuthenticatedButNotConnected(unittest.TestCase):
         joined = " ".join(tips)
         self.assertIn("New-ServicePrincipal", joined)
         self.assertNotIn("Add-MailboxPermission", joined)
+
+
+class TestWaitBeforeReconfiguring(unittest.TestCase):
+    """Cho "doi da" phai dung TRUOC cac buoc sua.
+
+    Ca that 15/09: service principal, ImapEnabled, Add-MailboxPermission deu
+    dung san tu dau; preflight van hong, roi tu xanh sau khi doi. Mot goi y day
+    nguoi ta di cau hinh lai trong luc do la day ho pha mot thu dang dung.
+    """
+
+    LOG = "nguon: User is authenticated but not connected.\n"
+
+    def test_noi_doi_truoc_khi_sua(self):
+        tips = " ".join(diagnose(self.LOG, source="m365"))
+        self.assertIn("TRUOC KHI sua", tips)
+        self.assertIn("lan kip", tips)
+
+    def test_loi_khuyen_doi_dung_truoc_loi_khuyen_sua(self):
+        tips = " ".join(diagnose(self.LOG, source="m365"))
+        self.assertLess(tips.index("chay lai preflight"),
+                        tips.index("Add-MailboxPermission"))
