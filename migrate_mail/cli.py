@@ -9,12 +9,14 @@ import os
 import signal
 import sys
 from contextlib import contextmanager
+from dataclasses import replace
 import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from . import __version__, mailboxes, providers, report, runner, verify
+from . import (__version__, handover, mailboxes, providers, report, runner,
+               verify)
 from .config import (FOLDER_KEYS, MASTER_AUTHZID, MASTER_SEPARATOR, Config,
                      load_config)
 from .discover import (NOSELECT, SPECIAL_ARCHIVE, SPECIAL_DRAFTS, SPECIAL_JUNK,
@@ -1037,6 +1039,11 @@ def cmd_verify(args, cfg: Config) -> int:
                         out("         ... va %d cai nua"
                             % (fc.missing_on_dest - len(fc.missing_samples)))
 
+        # Luu o dang may doc duoc, canh file text o tren. File text de nguoi
+        # truc doc ngay bay gio; file JSON de lenh `handover` dung lam bang
+        # chung khi lam bien ban, co the la ba tuan sau va boi mot nguoi khac.
+        report.save_verify(cfg.paths.statedir, checks, cap)
+
         total_cmp = sum(c.compared for c in checks)
         total_bad = sum(c.mismatched for c in checks)
         total_missing = sum(c.missing for c in checks)
@@ -1140,6 +1147,64 @@ def cmd_report(args, cfg: Config) -> int:
             say("\nDa ghi %s" % report.write_html(rows, out, note))
         else:
             say("\nDa ghi %s" % report.write_csv(rows, out))
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# handover
+# --------------------------------------------------------------------------- #
+
+def cmd_handover(args, cfg: Config) -> int:
+    """Bien ban ban giao: gop moi lan chay + ket qua verify vao mot file HTML.
+
+    Luon gop tat ca cac lan chay, khong co che do "mot lan chay": mot cuoc
+    migrate that chay rai rac nhieu dem, va mot bien ban chi ke mot dem la mot
+    bien ban sai.
+    """
+    runs_dir = Path(cfg.paths.statedir) / "runs"
+    runs = sorted(runs_dir.glob("*.json")) if runs_dir.exists() else []
+    if not runs:
+        say("Chua co lan chay nao duoc luu trong %s" % runs_dir)
+        say("Chay `sync` truoc da -- khong co gi de ban giao.")
+        return 1
+
+    rows = report.refresh_hints(report.merged_rows(runs_dir))
+    if not rows:
+        say("Cac lan chay da luu deu la --dry, chua co mailbox nao chuyen that.")
+        return 1
+
+    verify_users = report.load_verify(cfg.paths.statedir)
+
+    out = Path(args.out) if args.out else (
+        Path(cfg.paths.logdir) / ("ban-giao-%s.html" % time.strftime("%Y%m%d-%H%M%S")))
+
+    info = cfg.handover
+    if args.customer:
+        info = replace(info, customer=args.customer)
+
+    path = handover.write_handover(
+        out, rows,
+        verify_users=verify_users,
+        info=info,
+        source_name=cfg.source.provider.name,
+        dest_name=cfg.dest.provider.name,
+        period=handover.period_from_runs([p.stem for p in runs]),
+    )
+
+    ok = sum(1 for r in rows if r.get("ket_qua") == "OK")
+    say("Da ghi %s" % path)
+    say("  %d/%d mailbox hoan tat, gop tu %d lan chay."
+        % (ok, len(rows), len(runs)))
+    if not verify_users:
+        # Khong chan, nhung phai noi: to giay se ghi ro la chua doi chieu, va
+        # do la muc khach doc ky nhat.
+        say("  Chua co ket qua verify -- bien ban se ghi ro la chua doi chieu")
+        say("  ngay thang. Chay `mm.py verify` roi xuat lai neu can muc do.")
+    if not info.customer:
+        say("  Chua khai bao [handover] customer -- o ten khach hang de trong")
+        say("  cho dien tay. Xem config.example.ini.")
+    say("")
+    say("Mo bang trinh duyet roi in ra PDF de ky.")
     return 0
 
 
@@ -1338,6 +1403,14 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--run", default="", help="ten file run, vd 20260825-101500.json")
     r.add_argument("--out", default="", help="ghi ra file .csv hoac .html")
     r.set_defaults(func=cmd_report)
+
+    hv = sub.add_parser("handover",
+                        help="bien ban ban giao cho khach (HTML de in ra PDF)")
+    hv.add_argument("--out", default="",
+                    help="mac dinh: logs/ban-giao-<thoi-diem>.html")
+    hv.add_argument("--customer", default="",
+                    help="ten khach hang, ghi de [handover] customer")
+    hv.set_defaults(func=cmd_handover)
 
     return p
 

@@ -258,6 +258,71 @@ def load_preflight(statedir) -> Dict[str, Row]:
     return users if isinstance(users, dict) else {}
 
 
+VERIFY_FILE = "verify.json"
+
+
+def save_verify(statedir, checks, sample: int = 0) -> Path:
+    """Ghi ket qua verify cua tung mailbox vao state/verify.json.
+
+    Truoc day verify chi de lai mot file text cho NGUOI doc. Doc duoc thi tot,
+    nhung bao cao ban giao can chinh nhung con so do o dang may doc duoc --
+    neu khong thi den luc lam bao cao lai phai ngoi go tay lai tung dong, va
+    go tay vao mot to giay co chu ky la cho de sai nhat.
+
+    GOP chu khong de len, cung ly do voi preflight: `verify --only mot-dia-chi`
+    chi kiem mot hop thu, ghi de thi 199 hop kia bien mat khoi bao cao trong
+    khi khong ai ket luan lai ve chung ca.
+
+    checks: lap cac verify.UserCheck.
+    sample: so mail toi da lay mau moi folder o lan chay nay. Luu lai vi bao
+        cao ban giao phai noi ro no ket luan tren MAU bao nhieu -- mot to giay
+        noi "da doi chieu" ma khong noi doi chieu bao nhieu la mot to giay de
+        cai nhau ve sau.
+    """
+    path = Path(statedir) / VERIFY_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    users = load_verify(statedir)
+    when = time.strftime("%Y-%m-%d %H:%M:%S")
+    for c in checks:
+        users[c.src_user] = {
+            "src_user": c.src_user,
+            "dst_user": c.dst_user,
+            "ok": bool(c.ok),
+            "error": c.error or "",
+            "compared": c.compared,
+            "mismatched": c.mismatched,
+            "missing": c.missing,
+            "without_msgid": c.without_msgid,
+            "sample": int(sample or 0),
+            # Chi giu folder co van de. Mot hop thu 40 folder khop het thi 40
+            # dong "khong sao ca" khong noi them dieu gi, ma file thi phinh.
+            "folders": [
+                {"folder": f.source_folder, "error": f.error,
+                 "compared": f.compared, "mismatched": f.mismatched,
+                 "missing": f.missing_on_dest}
+                for f in c.folders if f.error or f.mismatched or f.missing_on_dest
+            ],
+            "when": when,
+        }
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"users": users}, fh, ensure_ascii=False, indent=2)
+    os.replace(str(tmp), str(path))
+    return path
+
+
+def load_verify(statedir) -> Dict[str, dict]:
+    """Ket qua verify da luu, khoa theo dia chi nguon. {} neu chua chay bao gio."""
+    path = Path(statedir) / VERIFY_FILE
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    users = data.get("users")
+    return users if isinstance(users, dict) else {}
+
+
 def _float(row: Row, key: str) -> float:
     try:
         return float(row.get(key) or 0)

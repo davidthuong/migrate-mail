@@ -240,12 +240,34 @@ class Paths:
 
 
 @dataclass
+class HandoverConf:
+    """Thong tin in len bao cao ban giao. Tat ca deu tuy chon.
+
+    De trong thi bao cao van ra duoc, chi la nhung o do hien mot dong gach de
+    dien tay. Nhu vay con hon bat nguoi ta khai bao du moi thu moi in duoc mot
+    to giay -- ban giao thuong lam voi lam.
+
+    Gia tri o day den tu config.ini (doc bang utf-8-sig) nen viet tieng Viet
+    co dau duoc; chung chi di vao file HTML chu khong bao gio in ra terminal.
+    """
+    customer: str = ""          # ten khach hang, in tren trang bia
+    performer: str = ""         # ben thuc hien
+    scope: str = ""             # mo ta pham vi; de trong thi tu sinh tu du lieu
+    signer: str = ""            # nguoi ky ben thuc hien
+    signer_title: str = ""
+    customer_signer: str = ""   # nguoi ky ben khach hang
+    customer_title: str = ""
+    contact: str = ""           # lien he ho tro sau ban giao
+
+
+@dataclass
 class Config:
     source: ServerConf
     dest: ServerConf
     sync: SyncConf
     paths: Paths
     path: Path
+    handover: HandoverConf = field(default_factory=HandoverConf)
 
 
 def _date_source(value: str) -> str:
@@ -450,4 +472,25 @@ def load_config(path: Path) -> Config:
         sync=_sync(cp, dest.provider),
         paths=paths,
         path=path,
+        handover=_handover(cp),
+    )
+
+
+def _handover(cp: configparser.ConfigParser) -> HandoverConf:
+    h = "handover"
+    if not cp.has_section(h):
+        return HandoverConf()
+
+    def get(key: str) -> str:
+        return cp.get(h, key, fallback="").strip()
+
+    return HandoverConf(
+        customer=get("customer"),
+        performer=get("performer"),
+        scope=get("scope"),
+        signer=get("signer"),
+        signer_title=get("signer_title"),
+        customer_signer=get("customer_signer"),
+        customer_title=get("customer_title"),
+        contact=get("contact"),
     )

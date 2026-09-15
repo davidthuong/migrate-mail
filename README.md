@@ -1042,6 +1042,60 @@ chạy cũ mất gợi ý (số liệu vẫn còn), và tool quay về dùng g�
 
 ---
 
+## Bàn giao cho khách
+
+`report` là màn hình vận hành — đọc để biết đêm qua chạy tới đâu. Khi xong việc
+thì thứ đưa cho khách là một cái khác:
+
+```bash
+python3 mm.py handover
+python3 mm.py handover --customer "Công ty CP Kỹ thuật Phương Nam"
+python3 mm.py handover --out bien-ban.html
+```
+
+Ra một file HTML một trang, mở bằng trình duyệt rồi in ra PDF để ký. Nó luôn
+**gộp tất cả các lần chạy** — không có chế độ một lần chạy, vì một cuộc migrate
+thật chạy rải rác nhiều đêm và một biên bản chỉ kể một đêm là một biên bản sai.
+
+Trên đó có:
+
+- **Trang bìa**: khách hàng, bên thực hiện, hệ thống nguồn/đích, khoảng thời
+  gian thực hiện (đọc từ tên các file run), ngày lập
+- **Phạm vi công việc** — tự sinh nếu không khai báo
+- **Kết quả tổng hợp** và bảng chi tiết từng mailbox
+- **Mục "Hộp thư chưa đạt"** nếu có, kèm hướng xử lý — không giấu
+- **Bảng đối chiếu ngày tháng** lấy từ lần `verify` gần nhất, kèm nói rõ phương
+  pháp: lấy mẫu bao nhiêu thư mỗi folder, ngưỡng sai lệch bao nhiêu giây
+- **Mục "Không thuộc phạm vi"**: lịch, danh bạ, task, bộ lọc, chữ ký
+- **Chỗ ký của hai bên**
+
+Hai điều cố ý:
+
+**Chưa chạy `verify` thì biên bản nói thẳng là chưa đối chiếu**, chứ không bỏ
+trống mục đó. Bỏ trống là kiểu im lặng tệ nhất — người đọc sẽ hiểu là đã kiểm và
+không có vấn đề gì, trong khi thật ra chưa ai kiểm cả. Muốn có mục đó thì chạy
+`verify` trước rồi xuất lại:
+
+```bash
+python3 mm.py verify && python3 mm.py handover
+```
+
+**Mục "Không thuộc phạm vi" luôn in ra**, kể cả khi khách không hỏi. Nói trước
+thì nó là phạm vi; để khách tự phát hiện sau ba ngày thì nó là sự cố, và lúc đó
+không còn giấy tờ nào bên mình.
+
+Thông tin khách hàng và người ký khai trong `config.ini`, mục `[handover]` — xem
+[`config.example.ini`](config.example.ini). Để trống ô nào thì ô đó in ra một
+dòng gạch để điền tay, biên bản vẫn ra được.
+
+> `verify` giờ ghi thêm `state/verify.json` bên cạnh file log dạng text. File
+> text để người trực đọc ngay lúc đó; file JSON để `handover` dùng làm bằng
+> chứng khi lập biên bản, có thể là ba tuần sau và bởi một người khác. Giống
+> `preflight`, nó **gộp** chứ không đè: `verify --only một-địa-chỉ` không xoá
+> kết quả của những hộp đã kiểm trước đó.
+
+---
+
 ## Các lệnh khác
 
 ```bash
@@ -1169,10 +1223,11 @@ migrate_mail/
   hints.py                 dịch lỗi imapsync thành việc cần làm
   verify.py                đối chiếu ngày tháng giữa hai đầu
   report.py                bảng terminal, CSV, HTML
+  handover.py              biên bản bàn giao cho khách (file duy nhất có dấu)
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     612 test, không chạm mạng
+tests/                     647 test, không chạm mạng
 testrig/                   hai Dovecot để thử những gì test không chứng minh được
 install.sh                 cài imapsync + module Perl
 .github/workflows/         CI: chạy bộ test trên Python 3.8 / 3.10 / 3.12
