@@ -1045,8 +1045,19 @@ def cmd_verify(args, cfg: Config) -> int:
 
         out("")
         if total_cmp == 0:
-            out("Khong doi chieu duoc mail nao. Da chay sync chua? Folder ben "
-                "dich co ton tai khong?")
+            # Khong doi chieu duoc vi KHONG MO NOI hop thu la chuyen khac han
+            # voi khong co gi de doi chieu. Hoi "da chay sync chua?" luc duong
+            # truyen dut la day nguoi ta di tim nham cho -- gap that: verify
+            # chay ngay sau mot lan sync thanh cong, M365 tra ve handshake
+            # timeout, va tool hoi lai xem da sync chua.
+            if checks and all(c.error for c in checks):
+                out("Khong mailbox nao ket noi duoc, nen khong co gi de doi "
+                    "chieu. Loi o tren la loi KET NOI, khong phai thieu mail.")
+                out("Chay lai verify truoc da -- server nguon hay tu choi mot "
+                    "lat sau khi vua bi sync keo du lieu lien tuc.")
+            else:
+                out("Khong doi chieu duoc mail nao. Da chay sync chua? Folder "
+                    "ben dich co ton tai khong?")
             return 1
         out("Ket qua: %d mail doi chieu, %d lech ngay (%.2f%%)."
             % (total_cmp, total_bad, 100.0 * total_bad / total_cmp))

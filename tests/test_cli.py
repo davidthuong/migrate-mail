@@ -1128,3 +1128,46 @@ class TestDoctorChecksTokenPermissions(CliTestCase):
             code, out = self.run_cli("doctor")
         self.assertIn("khong doc duoc quyen trong token", out)
         self.assertEqual(code, 0, out)
+
+
+class TestVerifyDistinguishesConnectionFailure(CliTestCase):
+    """Khong MO NOI hop thu khac han voi khong co gi de doi chieu.
+
+    Gap that: verify chay ngay sau mot lan sync thanh cong, M365 tra ve
+    "handshake operation timed out", va tool hoi lai "Da chay sync chua?
+    Folder ben dich co ton tai khong?" -- ca hai deu khong phai van de, va cau
+    hoi do day nguoi truc di tim nham cho.
+    """
+
+    def run_verify(self, **kw):
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.cli.open_connection", **kw):
+            return self.run_cli("verify", "--only", "an@cu.com")
+
+    def test_khong_noi_duoc_thi_noi_la_loi_ket_noi(self):
+        from migrate_mail.discover import DiscoveryError
+        code, out = self.run_verify(side_effect=DiscoveryError(
+            "khong ket noi duoc outlook.office365.com:993 "
+            "(_ssl.c:983: The handshake operation timed out)"))
+        self.assertEqual(code, 1)
+        self.assertIn("loi KET NOI", out)
+        self.assertIn("Chay lai verify", out)
+
+    def test_khong_hoi_da_chay_sync_chua(self):
+        """Cau hoi do sai huong khi van de la duong truyen."""
+        from migrate_mail.discover import DiscoveryError
+        _code, out = self.run_verify(side_effect=DiscoveryError("het gio cho"))
+        self.assertNotIn("Da chay sync chua", out)
+
+    def test_noi_duoc_nhung_rong_thi_giu_cau_hoi_cu(self):
+        """Mo duoc hop thu ma khong co gi -- luc do "da chay sync chua?" moi
+        dung la cau hoi can hoi."""
+        conn = mock.MagicMock()
+        with mock.patch("migrate_mail.cli.list_folders", side_effect=fake_folders), \
+             mock.patch("migrate_mail.cli.open_connection", return_value=conn), \
+             mock.patch("migrate_mail.verify.fetch_index",
+                        side_effect=lambda c, f, cap: ({}, 0, 0)):
+            code, out = self.run_cli("verify", "--only", "an@cu.com")
+        self.assertEqual(code, 1)
+        self.assertIn("Da chay sync chua", out)
+        self.assertNotIn("loi KET NOI", out)
