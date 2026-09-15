@@ -974,6 +974,23 @@ Trên dashboard:
 - Form thêm mailbox, ghi thẳng vào `users.csv`; dấu ✕ ở cuối mỗi dòng để xoá
   khỏi danh sách (chỉ xoá dòng trong CSV — mail đã chuyển và log vẫn còn)
 
+Khung **Công cụ & tệp** ở dưới có bốn nút làm việc trên cả cuộc migrate, không
+theo lựa chọn ở bảng trên: `Kiểm tra môi trường` (`doctor`), `Nguồn được hỗ trợ`
+(`providers`), `Xuất báo cáo` (`report --all`), và `Biên bản bàn giao`
+(`handover`). Hai nút sau sinh ra file trong `logs/`, và **tải về được ngay từ
+trang** — không phải SCP nữa. Danh sách tệp nằm ngay dưới bốn nút đó, báo cáo và
+biên bản luôn xếp trước log.
+
+> Tệp luôn được gửi dưới dạng **đính kèm**, kể cả file `.html`. Báo cáo HTML có
+> chứa nội dung lấy từ log imapsync; nó đã được escape lúc sinh ra, nhưng mở một
+> trang HTML ở *cùng gốc* với dashboard nghĩa là chỉ cần một chỗ escape sót là
+> script trong đó chạy được kèm cookie đăng nhập. Tải về rồi mở từ ổ đĩa thì đó
+> là một gốc khác — mà muốn in ra PDF thì cũng phải mở từ ổ đĩa, nên không bớt
+> tiện gì.
+
+Còn phải SSH vào mới làm được: `mkusers` (cần upload file) và sửa `config.ini`
+(chạm vào `oauth_client_secret` và `master_password`).
+
 Ba nguyên tắc an toàn của giao diện này:
 
 - **Mật khẩu không bao giờ được gửi ngược về trình duyệt.** API chỉ trả về một cờ
@@ -1227,7 +1244,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     647 test, không chạm mạng
+tests/                     673 test, không chạm mạng
 testrig/                   hai Dovecot để thử những gì test không chứng minh được
 install.sh                 cài imapsync + module Perl
 .github/workflows/         CI: chạy bộ test trên Python 3.8 / 3.10 / 3.12

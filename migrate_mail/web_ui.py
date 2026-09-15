@@ -96,6 +96,15 @@ PAGE = r"""<!doctype html>
            border-color:transparent;background:transparent}
  button.rm:hover:not(:disabled){color:var(--err);border-color:var(--err)}
  td.act{text-align:right;white-space:nowrap}
+ /* Danh sach tep: mot dem chay 200 hop sinh ra 200 log, nen phai co khung
+    cuon rieng thay vi keo trang dai ra vo tan. */
+ .files{max-height:20rem;overflow:auto}
+ .file{display:flex;gap:.6rem;align-items:baseline;padding:.45rem 1rem;
+       border-bottom:1px solid var(--line);font-size:13px}
+ .file:last-child{border-bottom:none}
+ .file a{color:var(--accent);font-weight:500;word-break:break-all}
+ .file .size,.file .when{color:var(--muted);font-size:12px;white-space:nowrap}
+ .file .when{margin-left:auto}
 </style>
 </head>
 <body>
@@ -149,6 +158,24 @@ PAGE = r"""<!doctype html>
       <span class="route" id="jobinfo"></span>
     </div>
     <pre id="log">Kết quả sẽ hiện ở đây.</pre>
+  </section>
+
+  <section class="card">
+    <h2>Công cụ &amp; tệp</h2>
+    <div class="bar">
+      <button data-act="doctor" data-global="1">Kiểm tra môi trường</button>
+      <button data-act="providers" data-global="1">Nguồn được hỗ trợ</button>
+      <span class="sep"></span>
+      <button data-act="report" data-global="1">Xuất báo cáo</button>
+      <button data-act="handover" data-global="1"
+              title="Biên bản để in ra PDF và ký với khách">Biên bản bàn giao</button>
+      <span class="scope">Áp dụng cho cả cuộc migrate, không theo lựa chọn ở trên</span>
+    </div>
+    <div class="files" id="files"><div class="empty">Đang tải…</div></div>
+    <div class="note">
+      Tệp nằm trong <code id="logdir">logs/</code> trên máy chủ này. Bấm để tải
+      về; trình duyệt không mở tại chỗ. Mở từ ổ đĩa rồi in ra PDF để ký.
+    </div>
   </section>
 
   <section class="card">
@@ -278,6 +305,40 @@ function fixLabel(m) {
   return m.ghi_chu;
 }
 
+function bytes(n) {
+  if (!(n >= 0)) return "";
+  const u = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+}
+
+function when(ts) {
+  const d = new Date(ts * 1000), p = (x) => ("0" + x).slice(-2);
+  return p(d.getDate()) + "/" + p(d.getMonth() + 1) + " " +
+         p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+function renderFiles() {
+  const box = $("files"), list = (state && state.files) || [];
+  if (!list.length) {
+    box.innerHTML = '<div class="empty">Chưa có tệp nào. ' +
+      "Chạy một tác vụ rồi quay lại đây.</div>";
+    return;
+  }
+  // Link tai ve la thẻ <a> thường chứ không phải fetch(): cookie đăng nhập đi
+  // kèm sẵn vì cùng gốc, và máy chủ trả Content-Disposition nên trình duyệt
+  // tải xuống chứ không rời trang.
+  box.innerHTML = list.map((f) =>
+    '<div class="file">' +
+    (f.kind === "bao-cao" ? '<span class="badge b-ok">báo cáo</span>' : "") +
+    '<a href="/api/file?name=' + encodeURIComponent(f.name) + '" download>' +
+    esc(f.name) + "</a>" +
+    '<span class="size">' + bytes(f.size) + "</span>" +
+    '<span class="when">' + when(f.mtime) + "</span>" +
+    "</div>").join("");
+}
+
 function renderFix() {
   const bad = state.mailboxes.filter((m) => fixTips(m).length);
   $("fix").hidden = !bad.length;
@@ -358,8 +419,9 @@ async function refresh() {
     text("meta", "config: " + state.config +
                  " · song song: " + state.workers + " mailbox");
     text("usersfile", state.users_file);
+    text("logdir", state.logdir);
     renderLabels();
-    renderRows(); renderFix(); renderScope(); renderJob();
+    renderRows(); renderFix(); renderScope(); renderJob(); renderFiles();
   } catch (e) {
     console.error("refresh hong:", e);
   }
@@ -404,7 +466,10 @@ function schedule() {
 document.querySelectorAll("button[data-act]").forEach((btn) => {
   btn.onclick = async () => {
     const act = btn.dataset.act;
-    const only = scope();
+    // Tác vụ toàn cục (doctor, providers, report, handover) làm việc trên cả
+    // cuộc migrate. Gửi kèm lựa chọn ở bảng trên thì người bấm sẽ tưởng báo
+    // cáo đã lọc theo lựa chọn đó, trong khi nó không hề.
+    const only = btn.dataset.global ? [] : scope();
     const who = only.length ? only.length + " mailbox đã chọn" : "TẤT CẢ mailbox";
     if (act === "sync" || act === "resume") {
       const msg = act === "resume"

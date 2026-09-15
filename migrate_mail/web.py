@@ -48,7 +48,17 @@ ACTIONS = {
     "sync": "Chay that",
     "resume": "Chay tiep (bo qua hop da xong)",
     "verify": "Doi chieu ngay thang",
+    "doctor": "Kiem tra moi truong",
+    "providers": "Nguon duoc ho tro",
+    "report": "Xuat bao cao",
+    "handover": "Bien ban ban giao",
 }
+
+# Tac vu lam viec tren CA cuoc migrate, khong phai tren mailbox duoc chon.
+# Giao dien gui only=[] cho chung, va _make_args cung bo qua only -- neu khong
+# thi chon vai mailbox roi bam "Xuat bao cao" se ra mot bao cao trong khi nguoi
+# bam tuong no da loc theo lua chon.
+GLOBAL_ACTIONS = frozenset(["doctor", "providers", "report", "handover"])
 
 
 @dataclass
@@ -121,7 +131,7 @@ class JobManager:
             except Exception as exc:
                 job.append("Canh bao: khong doc lai duoc config (%s), dung ban cu"
                            % exc)
-            args = _make_args(job.action, job.only, self.users_path)
+            args = _make_args(job.action, job.only, self.users_path, self.cfg)
             fn = _ACTION_FN[job.action]
             with cli.capture(job.append):
                 job.exit_code = fn(args, self.cfg)
@@ -152,11 +162,19 @@ class _Args:
         self.all = False
         self.run = ""
         self.out = ""
+        self.name = ""          # providers: xem chi tiet mot nha cung cap
+        self.customer = ""      # handover: ghi de ten khach hang
         self.__dict__.update(kw)
 
 
-def _make_args(action: str, only: List[str], users_path: Path) -> _Args:
-    args = _Args(only=list(only), users=str(users_path))
+def _make_args(action: str, only: List[str], users_path: Path,
+               cfg: Optional[Config] = None) -> _Args:
+    """cfg chi can cho cac tac vu SINH RA FILE (report, handover) -- chung phai
+    biet logdir de dat file vao dung cho ma trang tai ve doc duoc. Khong co cfg
+    thi chung van chay, chi la khong ghi file.
+    """
+    args = _Args(only=[] if action in GLOBAL_ACTIONS else list(only),
+                 users=str(users_path))
     if action == "dry":
         args.dry = True
     elif action == "folders":
@@ -168,6 +186,15 @@ def _make_args(action: str, only: List[str], users_path: Path) -> _Args:
     elif action == "resume":
         # Giong "sync" nhung bo qua mailbox da co state/<mailbox>/done.marker.
         args.resume = True
+    elif action == "report":
+        # Luon --all. Mot bao cao chi chua mot lan chay thi tren dashboard no
+        # gan nhu luon la bao cao sai: nguoi ta bam nut nay sau nhieu dem chay.
+        args.all = True
+        if cfg is not None:
+            args.out = str(Path(cfg.paths.logdir)
+                           / ("report-%s.html" % time.strftime("%Y%m%d-%H%M%S")))
+    # handover tu dat ten file trong logdir khi args.out rong, nen khong can
+    # lam gi o day.
     return args
 
 
@@ -181,6 +208,10 @@ _ACTION_FN: Dict[str, Callable] = {
     "sync": lambda a, c: cli.cmd_sync(a, c),
     "resume": lambda a, c: cli.cmd_sync(a, c),
     "verify": lambda a, c: cli.cmd_verify(a, c),
+    "doctor": lambda a, c: cli.cmd_doctor(a, c),
+    "providers": lambda a, c: cli.cmd_providers(a, c),
+    "report": lambda a, c: cli.cmd_report(a, c),
+    "handover": lambda a, c: cli.cmd_handover(a, c),
 }
 
 
@@ -268,6 +299,71 @@ def _preflight_row(pf: Dict, cfg: Config) -> Dict:
 
 
 # --------------------------------------------------------------------------- #
+# Tep trong logs/
+# --------------------------------------------------------------------------- #
+# Truoc day muon lay bao cao hay log ve may thi phai SCP. Voi bien ban ban
+# giao -- thu ma ca muc dich la dua cho khach -- thi bat nguoi ta mo terminal
+# moi cam duoc to giay minh vua bam nut sinh ra la vo ly.
+
+MAX_FILES = 60
+
+# Bao cao va bien ban len dau danh sach, log xuong duoi. Moi lan sync sinh ra
+# mot file log CHO MOI MAILBOX, nen xep thuan theo thoi gian thi chi mot dem
+# chay 200 hop la day het bao cao ra khoi gioi han.
+_REPORT_PREFIXES = ("ban-giao-", "report-")
+
+
+def _file_kind(name: str) -> str:
+    return "bao-cao" if name.startswith(_REPORT_PREFIXES) else "log"
+
+
+def _files(cfg: Config) -> List[Dict]:
+    logdir = Path(cfg.paths.logdir)
+    try:
+        entries = list(os.scandir(str(logdir)))
+    except OSError:                      # chua chay lan nao -> chua co logs/
+        return []
+    rows = []
+    for entry in entries:
+        try:
+            if not entry.is_file():
+                continue
+            st = entry.stat()
+        except OSError:                  # file bien mat giua luc quet
+            continue
+        rows.append({"name": entry.name, "size": st.st_size,
+                     "mtime": st.st_mtime, "kind": _file_kind(entry.name)})
+    rows.sort(key=lambda r: (r["kind"] != "bao-cao", -r["mtime"]))
+    return rows[:MAX_FILES]
+
+
+def _safe_log_path(cfg: Config, name: str) -> Optional[Path]:
+    """Duong dan that cua mot tep trong logs/, hoac None neu ten khong hop le.
+
+    Kiem tren duong dan DA GIAI chu khong tren chuoi. Loc '..' bang cach doc
+    chuoi thi con sot nhieu kieu viet, va mot cho hong o day cho tai ve bat ky
+    file nao tren may -- ke ca config.ini, tuc la mat khau cua ca cuoc migrate.
+    Symlink tro ra ngoai cung bi chan boi phep so thu muc cha sau khi resolve.
+
+    Chan luon ky tu dieu khien va dau nhay kep: ten file di thang vao header
+    Content-Disposition, ma mot ky tu xuong dong trong do la header injection.
+    """
+    if not name or "/" in name or "\\" in name or name in (".", ".."):
+        return None
+    if '"' in name or any(ord(ch) < 32 for ch in name):
+        return None
+    logdir = Path(cfg.paths.logdir)
+    try:
+        base = logdir.resolve()
+        path = (logdir / name).resolve()
+    except OSError:
+        return None
+    if path.parent != base or not path.is_file():
+        return None
+    return path
+
+
+# --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
 
@@ -299,6 +395,40 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code: int = 200) -> None:
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
                    "application/json; charset=utf-8")
+
+    def _send_file(self, path: Path) -> None:
+        """Gui mot tep trong logs/ ve trinh duyet, LUON dang dinh kem.
+
+        Khong bao gio de trinh duyet mo tai cho, ke ca voi file .html. Bao cao
+        HTML co chua noi dung lay tu log imapsync; no da duoc escape luc sinh
+        ra, nhung mo mot trang HTML o CUNG GOC voi dashboard nghia la chi can
+        mot cho escape sot la script trong do chay duoc kem cookie dang nhap.
+        Tai ve roi mo tu o dia thi no la mot goc khac, van de bien mat. In ra
+        PDF cung phai mo tu o dia, nen cach nay khong bot tien gi.
+        """
+        try:
+            size = path.stat().st_size
+            fh = path.open("rb")
+        except OSError as exc:
+            self._json({"error": "khong doc duoc tep: %s" % exc}, 404)
+            return
+        with fh:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Disposition",
+                             'attachment; filename="%s"' % path.name)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            # Doc theo khuc chu khong nap ca file vao bo nho: log cua mot lan
+            # chay 12 tieng co the vai tram MB, va VPS 1GB RAM se chet dung
+            # luc nguoi ta can chinh cai log do nhat.
+            while True:
+                chunk = fh.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     def _authorised(self) -> bool:
         cookie = self.headers.get("Cookie") or ""
@@ -371,6 +501,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "khong co quyen"}, 401)
             return
 
+        if parsed.path == "/api/file":
+            path = _safe_log_path(self.manager.cfg,
+                                  (query.get("name") or [""])[0])
+            if path is None:
+                self._json({"error": "khong tim thay tep"}, 404)
+                return
+            self._send_file(path)
+            return
+
         if parsed.path == "/api/state":
             cfg = self.manager.cfg
             self._json({
@@ -390,7 +529,10 @@ class Handler(BaseHTTPRequestHandler):
                 "workers": cfg.sync.workers,
                 "users_file": str(self.users_path),
                 "actions": ACTIONS,
+                "global_actions": sorted(GLOBAL_ACTIONS),
+                "logdir": str(cfg.paths.logdir),
                 "mailboxes": _mailboxes(cfg, self.users_path),
+                "files": _files(cfg),
                 "job": self.manager.job.as_dict() if self.manager.job else None,
             })
             return
