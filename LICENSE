@@ -1,0 +1,57 @@
+Bản quyền (c) 2026 David. Giữ toàn quyền.
+Copyright (c) 2026 David. All rights reserved.
+
+
+TIẾNG VIỆT
+
+Phần mềm này không phải phần mềm tự do và không phải mã nguồn mở. Mã nguồn
+trong kho này thuộc sở hữu của người giữ bản quyền nêu trên.
+
+Không ai được sao chép, sửa đổi, phân phối, bán, cho thuê, hoặc dùng phần mềm
+này để cung cấp dịch vụ cho bên thứ ba, nếu không có văn bản cho phép của người
+giữ bản quyền.
+
+Nếu bạn nhận được bản sao này kèm một hợp đồng hoặc thoả thuận cấp phép riêng,
+thì các điều khoản trong văn bản đó quyết định phạm vi bạn được dùng. File này
+chỉ nói rằng mặc định là không có quyền gì.
+
+Phần mềm được cung cấp "nguyên trạng", không kèm bảo đảm dưới bất kỳ hình thức
+nào. Người giữ bản quyền không chịu trách nhiệm cho bất kỳ thiệt hại nào phát
+sinh từ việc dùng phần mềm này, bao gồm cả mất mát dữ liệu trong quá trình
+chuyển đổi hộp thư.
+
+imapsync là phần mềm riêng, của tác giả khác, phát hành theo NO LIMIT PUBLIC
+LICENSE. Kho này không chứa mã nguồn imapsync; install.sh tải nó từ repo chính
+thức lúc cài đặt. Giấy phép của imapsync không ràng buộc gì lên mã nguồn trong
+kho này, và ngược lại.
+
+Liên hệ cấp phép thương mại: <điền email liên hệ>
+
+
+ENGLISH
+
+This software is neither free software nor open source. The source code in this
+repository is owned by the copyright holder named above.
+
+No permission is granted to copy, modify, distribute, sell, rent, or use this
+software to provide services to third parties, without written permission from
+the copyright holder.
+
+If you received this copy together with a separate contract or license
+agreement, the terms of that document govern your use. This file only states
+that, by default, no rights are granted.
+
+The software is provided "as is", without warranty of any kind. The copyright
+holder is not liable for any damages arising from use of this software,
+including loss of data during mailbox migration.
+
+imapsync is separate software by another author, released under the NO LIMIT
+PUBLIC LICENSE. This repository contains no imapsync source code; install.sh
+downloads it from the official repository at install time. The imapsync license
+imposes nothing on the source code in this repository, and vice versa.
+
+Commercial licensing enquiries: <điền email liên hệ>
+
+
+Bản tiếng Việt là bản gốc. Nếu hai bản có chỗ khác nhau, bản tiếng Việt quyết định.
+The Vietnamese text is authoritative; where the two differ, the Vietnamese governs.

@@ -1214,3 +1214,14 @@ Không có bước cài đặt nào vì bộ test chỉ dùng thư viện chuẩ
   [phần này](#đăng-nhập-bằng-tài-khoản-quản-trị-auth--master). Mới chỉ **Dovecot**
   là đã chạy thật; Zimbra suy từ tài liệu, chưa kiểm chứng. Provider khác đặt
   giá trị đó sẽ báo lỗi ngay lúc đọc config chứ không hỏng giữa chừng.
+
+---
+
+## Giấy phép
+
+Mã nguồn trong kho này là **sở hữu riêng, giữ toàn quyền** — xem
+[LICENSE](LICENSE). Không phải mã nguồn mở: mặc định không ai có quyền sao chép,
+phân phối, hay dùng nó để làm dịch vụ cho bên thứ ba. Muốn dùng thì liên hệ.
+
+imapsync là phần mềm riêng của tác giả khác, giấy phép NOLIMIT, và không bị ràng
+buộc bởi file trên — kho này không chứa mã nguồn imapsync.
