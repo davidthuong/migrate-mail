@@ -257,8 +257,16 @@ M365 = Provider(
         "Hau het tenant da tat basic auth -> dat auth = oauth2 trong config.ini.",
         "Voi oauth2: dang ky app tren Entra ID (Azure AD), cap quyen ung dung "
         "IMAP.AccessAsApp cho Office 365 Exchange Online, roi admin consent.",
-        "Chay lenh nay mot lan de cho app quyen doc mailbox (thay <appid>):"
-        " New-ServicePrincipal -AppId <appid> -ServiceId <objectid>",
+        "Dang ky app do trong Exchange Online PowerShell, MOT lan cho ca "
+        "tenant: New-ServicePrincipal -AppId <appid> -ObjectId <objectid>. "
+        "<objectid> phai lay o trang Enterprise applications, KHONG phai "
+        "trang App registrations -- hai so khac nhau va dung nham thi dang "
+        "nhap se hong.",
+        "Roi cap quyen cho app tren TUNG hop thu can chuyen: "
+        "Add-MailboxPermission -Identity <mailbox> -User <Identity lay tu "
+        "Get-ServicePrincipal> -AccessRights FullAccess. Thieu buoc nay thi "
+        "token van lay duoc, doctor van xanh, ma preflight bao 'User is "
+        "authenticated but not connected'.",
     ),
 )
 

@@ -287,3 +287,51 @@ class TestTokenFileStaysFresh(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def fake_jwt(claims):
+    """Token dang JWT that, chi de doc phan giua -- khong ky, khong can ky."""
+    import base64 as b64
+    import json as js
+
+    def seg(obj):
+        raw = js.dumps(obj).encode("utf-8")
+        return b64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    return "%s.%s.chu-ky-gia" % (seg({"alg": "RS256"}), seg(claims))
+
+
+class TestTokenRoles(unittest.TestCase):
+    """"Lay duoc token" KHONG co nghia la token dung duoc.
+
+    Them quyen ma quen bam admin consent thi Microsoft van cap token, chi la
+    token khong mang quyen nao. Doctor bao xanh, roi preflight chet voi "User
+    is authenticated but not connected" -- va khong co gi noi cho ta biet hai
+    chuyen do lien quan nhau. Gap that tren mot tenant that.
+    """
+
+    def test_doc_duoc_quyen(self):
+        token = fake_jwt({"roles": ["IMAP.AccessAsApp"], "appid": "abc"})
+        self.assertEqual(oauth.token_roles(token), ["IMAP.AccessAsApp"])
+
+    def test_token_khong_co_quyen_nao_tra_ve_danh_sach_rong(self):
+        """Phai phan biet duoc voi "khong doc duoc": rong la mot cau tra loi,
+        va no chinh la cau tra loi cua ca admin consent."""
+        self.assertEqual(oauth.token_roles(fake_jwt({"appid": "abc"})), [])
+
+    def test_nhieu_quyen(self):
+        token = fake_jwt({"roles": ["IMAP.AccessAsApp", "SMTP.SendAsApp"]})
+        self.assertIn("IMAP.AccessAsApp", oauth.token_roles(token))
+
+    def test_khong_phai_jwt_thi_tra_ve_None(self):
+        self.assertIsNone(oauth.token_roles("khong-phai-token"))
+        self.assertIsNone(oauth.token_roles(""))
+
+    def test_phan_giua_hong_thi_tra_ve_None_chu_khong_nem(self):
+        self.assertIsNone(oauth.token_roles("aaa.@@@khong-phai-base64@@@.bbb"))
+
+    def test_khong_can_padding_dung_chuan(self):
+        """Microsoft cat dau '=' o cuoi moi doan, dung chuan JWT."""
+        token = fake_jwt({"roles": ["IMAP.AccessAsApp"], "x": "y" * 7})
+        self.assertNotIn("=", token)
+        self.assertEqual(oauth.token_roles(token), ["IMAP.AccessAsApp"])

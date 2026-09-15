@@ -1041,3 +1041,90 @@ class TestVerifyNamesTheMissingMail(CliTestCase):
         self.run_verify(self._thieu(1))
         log = next((self.tmp / "logs").glob("verify-*.txt"))
         self.assertIn("<mat0@x>", log.read_text(encoding="utf-8"))
+
+
+CONFIG_OAUTH = """[source]
+provider = m365
+auth = oauth2
+oauth_tenant = contoso.onmicrosoft.com
+oauth_client_id = 00000000-0000-0000-0000-000000000000
+oauth_client_secret = bi-mat
+
+[dest]
+host = mail.congty.vn
+port = 993
+ssl = true
+
+[paths]
+imapsync = {imapsync}
+logdir = logs
+statedir = state
+"""
+
+USERS_OAUTH = """src_user,dst_user,dst_password
+an@cu.com,an@moi.vn,MatKhau1
+"""
+
+
+class TestDoctorChecksTokenPermissions(CliTestCase):
+    """Doctor phai noi duoc token co DUNG duoc khong, khong chi la co lay duoc.
+
+    Them quyen ma quen bam admin consent thi Microsoft van cap token, chi la
+    token rong quyen. Truoc day doctor in "[ OK ] lay duoc token (han 59
+    phut)" -- nghe rat yen tam -- roi preflight chet voi "User is authenticated
+    but not connected", va khong co gi noi hai chuyen do lien quan nhau.
+    """
+
+    def setUp(self):
+        super().setUp()
+        imapsync = "%s %s" % (quote(sys.executable), quote(FAKE))
+        (self.tmp / "config.ini").write_text(
+            CONFIG_OAUTH.format(imapsync=imapsync), encoding="utf-8")
+        (self.tmp / "users.csv").write_text(USERS_OAUTH, encoding="utf-8")
+
+    def run_doctor(self, roles):
+        import base64 as b64
+        import json as js
+
+        def seg(obj):
+            return b64.urlsafe_b64encode(
+                js.dumps(obj).encode("utf-8")).rstrip(b"=").decode("ascii")
+
+        claims = {"appid": "abc"}
+        if roles is not None:
+            claims["roles"] = roles
+        token = "%s.%s.ky" % (seg({"alg": "RS256"}), seg(claims))
+        with mock.patch("migrate_mail.oauth.request_token",
+                        return_value=(token, 3599)):
+            return self.run_cli("doctor")
+
+    def test_token_du_quyen_thi_noi_ro(self):
+        code, out = self.run_doctor(["IMAP.AccessAsApp"])
+        self.assertIn("token co quyen IMAP.AccessAsApp", out)
+        self.assertEqual(code, 0, out)
+
+    def test_token_rong_quyen_la_LOI_chu_khong_phai_canh_bao(self):
+        """Day la loi that: chay tiep chac chan hong o preflight."""
+        code, out = self.run_doctor([])
+        self.assertIn("KHONG co quyen IMAP.AccessAsApp", out)
+        self.assertIn("khong mang quyen nao ca", out)
+        self.assertEqual(code, 1, out)
+
+    def test_chi_dung_cho_phai_sua(self):
+        _code, out = self.run_doctor([])
+        self.assertIn("admin consent", out.lower())
+        self.assertIn("API permissions", out)
+
+    def test_co_quyen_khac_thi_liet_ke_ra(self):
+        """Biet token dang mang gi giup thay ngay la consent nham quyen."""
+        _code, out = self.run_doctor(["SMTP.SendAsApp"])
+        self.assertIn("SMTP.SendAsApp", out)
+        self.assertIn("KHONG co quyen IMAP.AccessAsApp", out)
+
+    def test_token_la_thi_canh_bao_chu_khong_chan(self):
+        """Khong doc duoc dinh dang thi dung ket luan la thieu quyen."""
+        with mock.patch("migrate_mail.oauth.request_token",
+                        return_value=("khong-phai-jwt", 3599)):
+            code, out = self.run_cli("doctor")
+        self.assertIn("khong doc duoc quyen trong token", out)
+        self.assertEqual(code, 0, out)

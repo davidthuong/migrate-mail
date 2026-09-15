@@ -31,6 +31,7 @@ Chuan bi mot lan tren tenant nguon (khach hang phai lam, khong tu lam ho duoc):
 
 from __future__ import annotations
 
+import base64
 import json
 import threading
 import time
@@ -173,6 +174,34 @@ def source_for(conf: OAuthConf) -> TokenSource:
             src = TokenSource(conf)
             _SOURCES[key] = src
         return src
+
+
+IMAP_ROLE = "IMAP.AccessAsApp"
+
+
+def token_roles(token: str) -> Optional[List[str]]:
+    """Cac quyen ung dung ghi trong token. None neu khong doc duoc.
+
+    Vi sao can: "lay duoc token" KHONG co nghia la token dung duoc. Neu app
+    duoc them quyen ma CHUA bam admin consent thi Microsoft van cap token --
+    chi la token khong mang quyen nao. Luc do doctor bao xanh con preflight
+    chet voi "User is authenticated but not connected", va khong co gi noi cho
+    ta biet hai chuyen do lien quan nhau. Gap that ngay 15/09.
+
+    Chi doc, KHONG xac thuc chu ky: day khong phai phep kiem bao mat, ta chi
+    muon biet Microsoft da ghi gi vao token vua cap cho chinh ta. Cung vi the
+    khong can thu vien JWT nao.
+    """
+    try:
+        body = token.split(".")[1]
+        body += "=" * (-len(body) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(body.encode("ascii")))
+    except Exception:
+        return None
+    roles = claims.get("roles")
+    if roles is None:
+        return []
+    return [str(r) for r in roles] if isinstance(roles, list) else [str(roles)]
 
 
 def xoauth2(user: str, token: str) -> bytes:

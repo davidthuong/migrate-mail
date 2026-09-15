@@ -635,3 +635,62 @@ class TestFetchErrorTellsTheRightStory(unittest.TestCase):
         text = GMAIL_PHIEN_CHET + "\nAccount exceeded command or bandwidth limits\n"
         tips = diagnose(text, source="gmail")
         self.assertIn("han muc", " ".join(tips).lower())
+
+
+class TestAuthenticatedButNotConnected(unittest.TestCase):
+    """Exchange noi "authenticated" that: token hop le VA da duoc nhan.
+
+    Gap that ngay 15/09 tren mot tenant that, luc do khong luat nao bat duoc
+    nen tool chi in danh sach chuan bi chung. Cau nay va "AUTHENTICATE failed"
+    doi hai viec khac han nhau, nham thi di sai huong ca buoi.
+    """
+
+    LOG = "nguon: User is authenticated but not connected.\n"
+
+    def test_noi_ro_token_da_duoc_nhan(self):
+        tips = diagnose(self.LOG, source="m365")
+        self.assertTrue(tips)
+        joined = " ".join(tips)
+        self.assertIn("DA duoc chap nhan", joined)
+
+    def test_kiem_quyen_trong_token_truoc_tien(self):
+        """Cho re nhat va hay gap nhat: da them quyen nhung chua admin consent.
+        Doctor van xanh vi Microsoft van cap token -- chi la token rong quyen."""
+        tips = diagnose(self.LOG, source="m365")
+        joined = " ".join(tips)
+        self.assertIn("roles", joined)
+        self.assertIn("IMAP.AccessAsApp", joined)
+        self.assertIn("consent", joined.lower())
+
+    def test_liet_ke_du_bon_cho_phai_kiem(self):
+        """Mot nguyen nhan duy nhat la doan; bon cho nay deu tung la thu pham."""
+        joined = " ".join(diagnose(self.LOG, source="m365"))
+        for phai_co in ("ImapEnabled", "Get-ServicePrincipal",
+                        "Add-MailboxPermission", "roles"):
+            self.assertIn(phai_co, joined)
+
+    def test_noi_ro_New_ServicePrincipal_la_chua_du(self):
+        """Day la cho hieu nham: chay xong lenh do tuong la xong."""
+        tips = diagnose(self.LOG, source="m365")
+        self.assertIn("KHONG cho app mo hop thu", " ".join(tips))
+
+    def test_canh_bao_nham_Object_ID(self):
+        tips = diagnose(self.LOG, source="m365")
+        self.assertIn("Enterprise applications", " ".join(tips))
+
+    def test_bat_ca_khi_m365_nam_o_dau_dich(self):
+        """Cau nay chi Exchange moi noi, ma M365 co the la dau DICH."""
+        tips = diagnose(self.LOG, source="gmail", dest="m365")
+        self.assertIn("Add-MailboxPermission", " ".join(tips))
+
+    def test_khong_lan_voi_authenticate_failed(self):
+        """Hai cau, hai luat, cung ho 'auth' -- moi log chi ra mot goi y."""
+        tips = diagnose(self.LOG, source="m365")
+        self.assertEqual(len([t for t in tips if "Add-MailboxPermission" in t
+                              or "New-ServicePrincipal" in t]), 1, tips)
+
+    def test_authenticate_failed_van_ra_goi_y_cu(self):
+        tips = diagnose("NO AUTHENTICATE failed.\n", source="m365")
+        joined = " ".join(tips)
+        self.assertIn("New-ServicePrincipal", joined)
+        self.assertNotIn("Add-MailboxPermission", joined)

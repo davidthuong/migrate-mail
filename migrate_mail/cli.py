@@ -170,10 +170,31 @@ def _check_oauth(cfg: Config) -> int:
         if not server.uses_oauth:
             continue
         try:
-            from .oauth import request_token
-            _token, expires = request_token(server.oauth)
+            from .oauth import IMAP_ROLE, request_token, token_roles
+            token, expires = request_token(server.oauth)
             say("[ OK ] OAuth2 %s: lay duoc token (han %d phut)"
                 % (side, max(1, expires // 60)))
+            # "Lay duoc token" chua phai la xong. Them quyen ma quen bam admin
+            # consent thi Microsoft VAN cap token, chi la token khong mang
+            # quyen nao -- doctor xanh, roi preflight chet voi "User is
+            # authenticated but not connected" ma khong ai noi hai chuyen do
+            # lien quan nhau.
+            roles = token_roles(token)
+            if roles is None:
+                say("[CANH] OAuth2 %s: khong doc duoc quyen trong token "
+                    "(dinh dang la)." % side)
+            elif IMAP_ROLE in roles:
+                say("[ OK ] OAuth2 %s: token co quyen %s" % (side, IMAP_ROLE))
+            else:
+                say("[LOI ] OAuth2 %s: token KHONG co quyen %s%s"
+                    % (side, IMAP_ROLE,
+                       " (token dang mang: %s)" % ", ".join(roles) if roles else
+                       " -- token khong mang quyen nao ca"))
+                say("       Quyen da them nhung chua duoc admin consent. Vao "
+                    "Entra ID > App registrations > app cua ban >")
+                say("       API permissions, cot Status phai la 'Granted "
+                    "for <tenant>'. Them quyen khong thoi la chua du.")
+                problems += 1
         except Exception as exc:
             say("[LOI ] OAuth2 %s: %s" % (side, exc))
             problems += 1

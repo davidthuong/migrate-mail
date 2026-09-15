@@ -144,6 +144,34 @@ _AUTH_RULES = [
           "oauth_tenant. Sua trong config.ini roi chay lai doctor.",
           scope=("m365",), family="auth"),
 
+    # Exchange noi "authenticated" that: token hop le VA da duoc nhan. Cai hong
+    # nam o buoc sau -- app khong duoc phep MO hop thu do. Phai tach khoi luat
+    # "authenticate failed" ben duoi, vi hai cau do doi hai viec khac han nhau
+    # va nham thi di sai huong ca buoi.
+    #
+    # Gap that ngay 15/09 tren mot tenant that, va luc do khong luat nao bat
+    # duoc nen tool chi in ra danh sach chuan bi chung.
+    #
+    # KHONG dat scope: cau nay chi Exchange moi noi, ma M365 co the nam o dau
+    # dich chu khong chi dau nguon.
+    _rule(13, r"authenticated but not connected",
+          "Token DA duoc chap nhan; cho hong nam o QUYEN, khong phai o OAuth. "
+          "Bon thu phai du ca bon, kiem theo thu tu re truoc: "
+          "(1) token co mang quyen chua -- giai ma phan giua cua token va xem "
+          "truong 'roles', phai co IMAP.AccessAsApp; rong tuc la da them quyen "
+          "nhung CHUA bam admin consent trong Entra ID, va doctor van xanh vi "
+          "Microsoft van cap token. "
+          "(2) Get-CASMailbox -Identity <mailbox> | fl ImapEnabled. "
+          "(3) Get-ServicePrincipal | fl -- app da dang ky trong Exchange "
+          "chua, va Object ID phai lay o trang Enterprise applications chu "
+          "khong phai App registrations. "
+          "(4) Add-MailboxPermission -Identity <mailbox> -User <Identity lay "
+          "tu Get-ServicePrincipal> -AccessRights FullAccess -- New-Service"
+          "Principal chi dang ky app, no KHONG cho app mo hop thu nao ca. "
+          "Quyen o Exchange Online co the mat vai phut moi lan; sua xong doi "
+          "5 phut roi chay lai preflight.",
+          family="auth"),
+
     _rule(13, r"authenticate failed|xoauth2|invalid_token|invalid_grant",
           "Token lay duoc nhung Exchange tu choi. Hai nguyen nhan hay gap: "
           "(a) chua chay New-ServicePrincipal cho app tren Exchange Online "
