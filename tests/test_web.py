@@ -882,3 +882,79 @@ class TestSideNamesAreAccented(unittest.TestCase):
         from migrate_mail.web_ui import PAGE
         self.assertIn('nguon: "nguồn"', PAGE)
         self.assertIn('dich: "đích"', PAGE)
+
+
+def _free_port():
+    import socket
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+class TestBannerReachesAPipe(unittest.TestCase):
+    """Khoi chu khoi dong phai ra NGAY ca khi stdout la ong dan.
+
+    Ca that tren may dev: server len va phuc vu binh thuong (tra 401 dung
+    chuan) nhung file output trong tron. serve() dung print() tran, ma Python
+    gom dem stdout theo khoi khi dau ra khong phai terminal. Khoi chu chi vai
+    tram byte nen nam lai trong dem, va vi server sau do khong in gi nua nen
+    no nam do MAI MAI.
+
+    Hau qua khong phai "thieu mot dong log": token nam trong khoi chu do, nen
+    nguoi chay `nohup ./mm.py web > web.log &` mat luon duong vao dashboard
+    cua chinh minh, trong khi tu ben ngoai nhin thi moi thu deu binh thuong.
+
+    Test chay that mot tien trinh con voi stdout la PIPE -- dung dieu kien lam
+    lo ra loi. Goi serve() trong cung tien trinh se khong bat duoc gi.
+    """
+
+    def test_token_hien_ra_ngay_khi_stdout_la_ong_dan(self):
+        tmp = Path(tempfile.mkdtemp(prefix="mmbanner-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        (tmp / "config.ini").write_text(CONFIG.format(imapsync="imapsync"),
+                                        encoding="utf-8")
+        (tmp / "users.csv").write_text(USERS, encoding="utf-8")
+
+        proc = subprocess.Popen(
+            [sys.executable, str(HERE.parent / "mm.py"),
+             "--config", str(tmp / "config.ini"),
+             "--users", str(tmp / "users.csv"),
+             "web", "--port", str(_free_port())],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            cwd=str(HERE.parent))
+        # Dang ky nguoc thu tu chay: close sau cung, khi tien trinh da chet va
+        # luong doc da ket thuc.
+        self.addCleanup(proc.stdout.close)
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+
+        # Doc trong mot luong rieng: neu loi tai phat thi readline() se treo,
+        # va treo trong luong chinh nghia la ca bo test dung hinh chu khong
+        # phai mot test do.
+        out = []
+        reader = threading.Thread(
+            target=lambda: out.extend(iter(proc.stdout.readline, b"")),
+            daemon=True)
+        reader.start()
+
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if any(b"?t=" in line for line in out):
+                break
+            time.sleep(0.1)
+
+        self.assertTrue(any(b"?t=" in line for line in out),
+                        "khong thay dong token trong 10s; nhan duoc: %r" % out)
+
+    def test_web_khong_dung_print_tran(self):
+        """Phong nguoi sau -- va chinh minh -- quay lai dung print().
+
+        say() da co flush=True san. Loi tren xay ra dung vi cho nay di vong
+        qua no.
+        """
+        src = (HERE.parent / "migrate_mail" / "web.py").read_text(encoding="utf-8")
+        self.assertIsNone(re.search(r"(?<![.\w])print\(", src),
+                          "web.py dung print() tran; dung cli.say() de co flush")

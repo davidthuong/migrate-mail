@@ -717,23 +717,30 @@ def serve(cfg: Config, users_path: Path, host: str = "127.0.0.1",
     Handler.users_path = Path(users_path)
 
     httpd = ThreadingHTTPServer((host, port), Handler)
-    print("migrate-mail dashboard %s" % __version__)
-    print("")
+    # cli.say chu khong phai print: say() co flush=True. Python gom dem stdout
+    # theo khoi khi dau ra khong phai terminal, va khoi chu duoi day chi vai
+    # tram byte -- chay bang `nohup ... > web.log` hay systemd thi no nam lai
+    # trong dem, va vi server sau do khong in gi nua nen no nam do MAI MAI.
+    # Nguoi chay mat token, tuc la mat luon duong vao dashboard cua chinh minh,
+    # trong khi server van dang phuc vu binh thuong.
+    cli.say("migrate-mail dashboard %s" % __version__)
+    cli.say()
     if host not in ("127.0.0.1", "localhost", "::1"):
-        print("  CANH BAO: dang lang nghe tren %s, tuc la mo ra ngoai may nay." % host)
-        print("  Giao dien nay cham vao mat khau. Nen dung 127.0.0.1 + SSH tunnel.")
-        print("")
+        cli.say("  CANH BAO: dang lang nghe tren %s, tuc la mo ra ngoai may nay." % host)
+        cli.say("  Giao dien nay cham vao mat khau. Nen dung 127.0.0.1 + SSH tunnel.")
+        cli.say()
     else:
-        print("  Tao tunnel tu may ban:")
-        print("    ssh -L %d:127.0.0.1:%d %s@<vps>" % (port, port, "root"))
-        print("")
-    print("  Mo dia chi nay (token chi dung mot lan de dat cookie):")
-    print("    http://%s:%d/?t=%s" % (host, port, token))
-    print("")
-    print("  Ctrl-C de dung.")
+        cli.say("  Tao tunnel tu may ban:")
+        cli.say("    ssh -L %d:127.0.0.1:%d %s@<vps>" % (port, port, "root"))
+        cli.say()
+    cli.say("  Mo dia chi nay (token chi dung mot lan de dat cookie):")
+    cli.say("    http://%s:%d/?t=%s" % (host, port, token))
+    cli.say()
+    cli.say("  Ctrl-C de dung.")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nDa dung.")
+        cli.say()
+        cli.say("Da dung.")
     finally:
         httpd.server_close()

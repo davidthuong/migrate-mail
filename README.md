@@ -1244,7 +1244,7 @@ migrate_mail/
   cli.py                   các lệnh con
   web.py                   dashboard: HTTP server, chạy job
   web_ui.py                trang HTML của dashboard
-tests/                     673 test, không chạm mạng
+tests/                     675 test, không chạm mạng
 testrig/                   hai Dovecot để thử những gì test không chứng minh được
 install.sh                 cài imapsync + module Perl
 .github/workflows/         CI: chạy bộ test trên Python 3.8 / 3.10 / 3.12
