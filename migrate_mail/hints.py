@@ -177,11 +177,21 @@ _AUTH_RULES = [
           "5 phut roi chay lai preflight.",
           family="auth"),
 
-    _rule(13, r"authenticate failed|xoauth2|invalid_token|invalid_grant",
+    # KHONG bat chuoi "xoauth2" tran. imapsync in no ra trong MOI lan chay
+    # M365 tren ba dong hoan toan binh thuong:
+    #   Host1 capability before authentication: ... AUTH=XOAUTH2 ...
+    #   Host1: success login on [...] auth [XOAUTH2 accesstoken] or [LOGIN]
+    #   Host1 capability once authenticated: ... AUTH=XOAUTH2 ...
+    # Dong thu hai la dong THANH CONG. Bat chuoi do nghia la moi lan chay M365
+    # that bai -- vi bat ky ly do gi -- deu bi dan nhan "chua admin consent".
+    # Gap that: mot lan chay chet vi EXIT_ERR_SELECT sau khi da chep 3.130
+    # mail, va goi y in ra lai bao di kiem lai New-ServicePrincipal.
+    _rule(13, r"authenticat(e|ion) failed|invalid_token|invalid_grant",
           "Token lay duoc nhung Exchange tu choi. Hai nguyen nhan hay gap: "
           "(a) chua chay New-ServicePrincipal cho app tren Exchange Online "
           "PowerShell, (b) chua cap quyen ung dung IMAP.AccessAsApp va admin "
           "consent cho app do trong Entra ID.",
+          unless=r"success login|capability",
           scope=("m365",), family="auth"),
 
     _rule(13, r"imap.*(is )?(disabled|not enabled)|"

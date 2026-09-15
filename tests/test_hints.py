@@ -715,3 +715,39 @@ class TestWaitBeforeReconfiguring(unittest.TestCase):
         tips = " ".join(diagnose(self.LOG, source="m365"))
         self.assertLess(tips.index("chay lai preflight"),
                         tips.index("Add-MailboxPermission"))
+
+
+# Ba dong nay imapsync in ra trong MOI lan chay M365, ke ca lan chay hoan hao.
+# Chep nguyen van tu mot log that.
+M365_DONG_BINH_THUONG = """\
+Host1 capability before authentication: IMAP4 IMAP4rev1 AUTH=XOAUTH2 LOGINDISABLED SASL-IR UIDPLUS MOVE ID UNSELECT CHILDREN IDLE NAMESPACE LITERAL+ AUTH
+Host1: success login on [outlook.office365.com] with user [a@b.onmicrosoft.com] auth [XOAUTH2 accesstoken] or [LOGIN]
+Host1 capability once authenticated: IMAP4 IMAP4rev1 AUTH=PLAIN AUTH=XOAUTH2 SASL-IR UIDPLUS MOVE ID UNSELECT CHILDREN IDLE NAMESPACE LITERAL+ AUTH
+"""
+
+
+class TestXoauth2StringIsNotAFailure(unittest.TestCase):
+    """Chuoi "xoauth2" xuat hien o dong THANH CONG, khong phai dong loi.
+
+    Gap that: mot lan chay M365 chet vi EXIT_ERR_SELECT sau khi da chep 3.130
+    mail, va goi y in ra lai bao di kiem New-ServicePrincipal va admin consent
+    -- trong khi preflight vua xanh va 3.130 mail da sang den noi. Luat cu bat
+    chuoi "xoauth2" tran nen moi lan chay M365 that bai deu dinh no.
+    """
+
+    def test_dong_dang_nhap_thanh_cong_khong_sinh_goi_y_auth(self):
+        tips = diagnose(M365_DONG_BINH_THUONG, source="m365")
+        self.assertNotIn("New-ServicePrincipal", " ".join(tips))
+
+    def test_loi_khac_khong_bi_dan_nhan_auth(self):
+        """EXIT_ERR_SELECT di kem ba dong tren -- van khong duoc ra goi y auth."""
+        text = M365_DONG_BINH_THUONG + "Exiting with return value 114 (EXIT_ERR_SELECT)\n"
+        tips = diagnose(text, source="m365")
+        self.assertNotIn("admin consent", " ".join(tips).lower())
+
+    def test_loi_xac_thuc_that_van_bat_duoc(self):
+        for dong in ("NO AUTHENTICATE failed.",
+                     "Authentication failed for user",
+                     "error: invalid_grant"):
+            tips = diagnose(M365_DONG_BINH_THUONG + dong + "\n", source="m365")
+            self.assertIn("New-ServicePrincipal", " ".join(tips), dong)
